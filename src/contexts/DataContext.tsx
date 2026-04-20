@@ -9,11 +9,14 @@ interface DataContextValue {
   mergeDataset: (partial: Partial<Dataset>) => void;
   reset: () => void;
 
-  periodos: string[];
-  periodoSelecionado: string | "ALL";
-  setPeriodoSelecionado: (p: string | "ALL") => void;
+  periodos: string[]; // todos disponíveis (ordenados)
+  periodosSelecionados: string[]; // [] = todos
+  setPeriodosSelecionados: (p: string[]) => void;
+  togglePeriodo: (p: string) => void;
+  selectAll: () => void;
+  selectTrimestre: (q: "Q1" | "Q2" | "Q3" | "Q4") => void;
 
-  rows: VendedorConsolidado[]; // consolidado conforme período selecionado
+  rows: VendedorConsolidado[]; // consolidado dos períodos selecionados
   rowsAll: VendedorConsolidado[]; // tudo
   metrics: TimeMetrics;
 }
@@ -22,7 +25,7 @@ const Ctx = createContext<DataContextValue | null>(null);
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [dataset, setDatasetState] = useState<Dataset>(EMPTY_DATASET);
-  const [periodoSelecionado, setPeriodoSelecionado] = useState<string | "ALL">("ALL");
+  const [periodosSelecionados, setPeriodosSelecionadosState] = useState<string[]>([]);
 
   useEffect(() => {
     setDatasetState(loadDataset());
@@ -36,9 +39,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const mergeDataset = useCallback(
     (partial: Partial<Dataset>) => {
       const next: Dataset = {
-        comercial: partial.comercial ?? dataset.comercial,
-        custo: partial.custo ?? dataset.custo,
+        vendedor: partial.vendedor ?? dataset.vendedor,
         carteira: partial.carteira ?? dataset.carteira,
+        folha: partial.folha ?? dataset.folha,
         updatedAt: new Date().toISOString(),
       };
       setDatasetState(next);
@@ -50,24 +53,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     setDatasetState(EMPTY_DATASET);
     saveDataset(EMPTY_DATASET);
+    setPeriodosSelecionadosState([]);
   }, []);
 
   const periodos = useMemo(() => listPeriodos(dataset), [dataset]);
 
-  // ajusta seleção se o período sumir
+  // limpa seleções inválidas
   useEffect(() => {
-    if (periodoSelecionado !== "ALL" && !periodos.includes(periodoSelecionado)) {
-      setPeriodoSelecionado(periodos.length ? periodos[periodos.length - 1] : "ALL");
-    }
-  }, [periodos, periodoSelecionado]);
+    setPeriodosSelecionadosState((sel) => sel.filter((p) => periodos.includes(p)));
+  }, [periodos]);
+
+  const setPeriodosSelecionados = useCallback((p: string[]) => {
+    setPeriodosSelecionadosState(p);
+  }, []);
+
+  const togglePeriodo = useCallback((p: string) => {
+    setPeriodosSelecionadosState((sel) =>
+      sel.includes(p) ? sel.filter((x) => x !== p) : [...sel, p],
+    );
+  }, []);
+
+  const selectAll = useCallback(() => setPeriodosSelecionadosState([]), []);
+
+  const selectTrimestre = useCallback(
+    (q: "Q1" | "Q2" | "Q3" | "Q4") => {
+      const range: Record<string, [number, number]> = {
+        Q1: [1, 3], Q2: [4, 6], Q3: [7, 9], Q4: [10, 12],
+      };
+      const [lo, hi] = range[q];
+      const sel = periodos.filter((p) => {
+        const m = parseInt(p.split("-")[1], 10);
+        return m >= lo && m <= hi;
+      });
+      setPeriodosSelecionadosState(sel);
+    },
+    [periodos],
+  );
 
   const rowsAll = useMemo(() => buildConsolidated(dataset), [dataset]);
   const rows = useMemo(
     () =>
-      periodoSelecionado === "ALL"
+      periodosSelecionados.length === 0
         ? rowsAll
-        : buildConsolidated(dataset, { periodo: periodoSelecionado }),
-    [dataset, periodoSelecionado, rowsAll],
+        : buildConsolidated(dataset, { periodos: periodosSelecionados }),
+    [dataset, periodosSelecionados, rowsAll],
   );
   const metrics = useMemo(() => computeTimeMetrics(rows), [rows]);
 
@@ -77,8 +106,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mergeDataset,
     reset,
     periodos,
-    periodoSelecionado,
-    setPeriodoSelecionado,
+    periodosSelecionados,
+    setPeriodosSelecionados,
+    togglePeriodo,
+    selectAll,
+    selectTrimestre,
     rows,
     rowsAll,
     metrics,

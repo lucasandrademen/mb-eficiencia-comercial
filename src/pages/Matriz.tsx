@@ -90,7 +90,7 @@ export default function Matriz() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   type="number"
-                  dataKey="faturamento_realizado"
+                  dataKey="faturamento"
                   name="Faturamento"
                   tickFormatter={(v) => fmtBRL(v, { compact: true })}
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
@@ -186,7 +186,7 @@ export default function Matriz() {
               ) : (
                 <ul className="divide-y divide-border text-sm">
                   {grouped[q]
-                    .sort((a, b) => b.faturamento_realizado - a.faturamento_realizado)
+                    .sort((a, b) => b.faturamento - a.faturamento)
                     .slice(0, 8)
                     .map((r) => (
                       <li
@@ -196,12 +196,12 @@ export default function Matriz() {
                         <div className="min-w-0">
                           <div className="font-medium truncate">{r.vendedor_nome}</div>
                           <div className="text-[11px] text-muted-foreground">
-                            {r.supervisor || "—"} • {r.regiao || "—"}
+                            {r.supervisor || "—"} • {r.cidade_principal || "—"}
                           </div>
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-medium">
-                            {fmtBRL(r.faturamento_realizado, { compact: true })}
+                            {fmtBRL(r.faturamento, { compact: true })}
                           </div>
                           <div className="text-[11px] text-muted-foreground">
                             {fmtPct(r.percentual_custo)} • {fmtROI(r.roi_comercial)}
@@ -231,21 +231,21 @@ function MatrizTooltip({ active, payload }: any) {
     <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-elevated">
       <div className="font-semibold text-sm mb-1">{r.vendedor_nome}</div>
       <div className="text-muted-foreground mb-2">
-        {r.supervisor || "—"} • {r.regiao || "—"} • {r.periodo}
+        {r.supervisor || "—"} • {r.cidade_principal || "—"} • {r.periodo}
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
         <span className="text-muted-foreground">Faturamento:</span>
-        <span className="font-medium text-right">{fmtBRL(r.faturamento_realizado)}</span>
+        <span className="font-medium text-right">{fmtBRL(r.faturamento)}</span>
         <span className="text-muted-foreground">Custo:</span>
-        <span className="font-medium text-right">{fmtBRL(r.custo_total)}</span>
+        <span className="font-medium text-right">{fmtBRL(r.custo)}</span>
         <span className="text-muted-foreground">% Custo:</span>
         <span className="font-medium text-right">{fmtPct(r.percentual_custo)}</span>
         <span className="text-muted-foreground">ROI:</span>
         <span className="font-medium text-right">{fmtROI(r.roi_comercial)}</span>
         <span className="text-muted-foreground">Carteira:</span>
         <span className="font-medium text-right">{fmtNum(r.total_clientes_carteira)}</span>
-        <span className="text-muted-foreground">Pos. 3M:</span>
-        <span className="font-medium text-right">{fmtNum(r.clientes_positivados_3m)}</span>
+        <span className="text-muted-foreground">Ticket médio:</span>
+        <span className="font-medium text-right">{fmtBRL(r.ticket_medio, { compact: true })}</span>
       </div>
       <Badge
         variant={quadrantBadge[r.quadrante_performance]}

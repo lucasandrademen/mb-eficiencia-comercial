@@ -32,9 +32,8 @@ export default function Faixas() {
   const stats = useMemo(() => {
     return FAIXAS_ORDER.map((faixa) => {
       const sub = rows.filter((r) => r.faixa_faturamento === faixa);
-      const fat = sub.reduce((s, r) => s + r.faturamento_realizado, 0);
-      const cust = sub.reduce((s, r) => s + r.custo_total, 0);
-      const clientesPos = sub.reduce((s, r) => s + r.clientes_positivados_mes, 0);
+      const fat = sub.reduce((s, r) => s + r.faturamento, 0);
+      const cust = sub.reduce((s, r) => s + r.custo, 0);
       const totalClientes = sub.reduce((s, r) => s + r.total_clientes_carteira, 0);
       return {
         faixa,
@@ -44,7 +43,7 @@ export default function Faixas() {
         pct_custo: fat > 0 ? cust / fat : 0,
         roi: cust > 0 ? fat / cust : 0,
         clientes_medio: sub.length ? totalClientes / sub.length : 0,
-        venda_cliente: clientesPos > 0 ? fat / clientesPos : 0,
+        ticket_medio: totalClientes > 0 ? fat / totalClientes : 0,
       };
     });
   }, [rows]);
@@ -119,7 +118,7 @@ export default function Faixas() {
                   <th className="py-2.5 pr-4 text-right">% Custo</th>
                   <th className="py-2.5 pr-4 text-right">ROI</th>
                   <th className="py-2.5 pr-4 text-right">Clientes médios</th>
-                  <th className="py-2.5 pr-4 text-right">Venda/cliente</th>
+                  <th className="py-2.5 pr-4 text-right">Ticket médio</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,7 +143,7 @@ export default function Faixas() {
                     <td className="py-2.5 pr-4 text-right">{fmtROI(s.roi)}</td>
                     <td className="py-2.5 pr-4 text-right">{fmtNum(s.clientes_medio, 1)}</td>
                     <td className="py-2.5 pr-4 text-right">
-                      {fmtBRL(s.venda_cliente, { compact: true })}
+                      {fmtBRL(s.ticket_medio, { compact: true })}
                     </td>
                   </tr>
                 ))}

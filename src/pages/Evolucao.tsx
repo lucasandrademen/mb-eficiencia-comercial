@@ -37,7 +37,7 @@ export default function Evolucao() {
           ? r.vendedor_nome
           : agrupamento === "supervisor"
           ? r.supervisor || "—"
-          : r.regiao || "—";
+          : r.cidade_principal || "—";
       set.add(key);
     }
     return [...set].sort();
@@ -54,8 +54,8 @@ export default function Evolucao() {
         custo: m.custo_total,
         pct: m.percentual_medio,
         roi: m.roi_medio,
-        clientes_pos: m.clientes_positivados_mes,
-        venda_cliente: m.venda_media_cliente,
+        clientes: m.total_clientes_carteira,
+        ticket: m.ticket_medio_time,
         municipios: Math.round(m.media_municipios * 10) / 10,
       };
     });
@@ -68,7 +68,7 @@ export default function Evolucao() {
         if (r.periodo !== p) return false;
         if (agrupamento === "vendedor") return r.vendedor_nome === filtro;
         if (agrupamento === "supervisor") return (r.supervisor || "—") === filtro;
-        return (r.regiao || "—") === filtro;
+        return (r.cidade_principal || "—") === filtro;
       });
       const m = computeTimeMetrics(sub);
       return {
@@ -78,8 +78,8 @@ export default function Evolucao() {
         custo: m.custo_total,
         pct: m.percentual_medio,
         roi: m.roi_medio,
-        clientes_pos: m.clientes_positivados_mes,
-        venda_cliente: m.venda_media_cliente,
+        clientes: m.total_clientes_carteira,
+        ticket: m.ticket_medio_time,
         municipios: Math.round(m.media_municipios * 10) / 10,
       };
     });
@@ -189,7 +189,7 @@ export default function Evolucao() {
         <Variacao label="Faturamento" prev={prev?.faturamento} curr={last?.faturamento} format={(v) => fmtBRL(v, { compact: true })} positiveIsGood />
         <Variacao label="% Custo" prev={prev?.pct} curr={last?.pct} format={(v) => fmtPct(v)} positiveIsGood={false} />
         <Variacao label="ROI" prev={prev?.roi} curr={last?.roi} format={fmtROI} positiveIsGood />
-        <Variacao label="Pos. clientes" prev={prev?.clientes_pos} curr={last?.clientes_pos} format={(v) => fmtNum(v)} positiveIsGood />
+        <Variacao label="Ticket médio" prev={prev?.ticket} curr={last?.ticket} format={(v) => fmtBRL(v, { compact: true })} positiveIsGood />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -240,7 +240,7 @@ export default function Evolucao() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Clientes positivados × venda média" subtitle="Carteira em movimento">
+        <ChartCard title="Clientes × ticket médio" subtitle="Carteira e valor por cliente">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={seriesFiltrada} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -260,8 +260,8 @@ export default function Evolucao() {
               <Line
                 yAxisId="L"
                 type="monotone"
-                dataKey="clientes_pos"
-                name="Clientes positivados"
+                dataKey="clientes"
+                name="Clientes"
                 stroke="hsl(200 70% 45%)"
                 strokeWidth={2}
                 dot
@@ -269,8 +269,8 @@ export default function Evolucao() {
               <Line
                 yAxisId="R"
                 type="monotone"
-                dataKey="venda_cliente"
-                name="Venda/cliente"
+                dataKey="ticket"
+                name="Ticket médio"
                 stroke="hsl(280 60% 50%)"
                 strokeWidth={2}
                 dot

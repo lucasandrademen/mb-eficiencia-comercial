@@ -1,37 +1,34 @@
-// ─── Bases de origem ─────────────────────────────────────────────────────────
+// ─── Bases de origem ───────────────────────────────────────────────────────
 
-export interface BaseComercial {
+export interface BaseVendedor {
   periodo: string; // "YYYY-MM"
   vendedor_id: string;
   vendedor_nome: string;
   supervisor?: string;
-  regiao?: string;
-  faturamento_realizado: number;
-  clientes_ativos?: number;
-  pedidos?: number;
-  ticket_medio?: number;
-}
-
-export interface BaseCusto {
-  periodo: string;
-  vendedor_id: string;
-  vendedor_nome?: string;
-  custo_total: number;
+  faturamento: number;
+  custo: number;
 }
 
 export interface BaseCarteira {
   periodo: string;
   vendedor_id: string;
-  vendedor_nome?: string;
   cliente_id: string;
   cliente_nome?: string;
-  municipio?: string;
-  setor?: string;
-  faturamento_cliente_mes?: number;
-  faturamento_cliente_3m?: number;
-  pedidos_cliente_mes?: number;
-  pedidos_cliente_3m?: number;
-  status_cliente?: string;
+  cidade?: string;
+  faturamento_cliente: number;
+}
+
+// ─── Folha de pagamento (extraída do PDF) ──────────────────────────────────
+
+export interface BaseFolha {
+  periodo: string;
+  codigo: string;
+  nome: string;
+  cargo: string;
+  departamento: string;
+  bruto: number;
+  descontos: number;
+  liquido: number;
 }
 
 // ─── Quadrante / faixa ───────────────────────────────────────────────────────
@@ -60,7 +57,7 @@ export const QUADRANTES_ORDER: Quadrante[] = [
   "Alerta vermelho",
 ];
 
-// ─── Linha consolidada ───────────────────────────────────────────────────────
+// ─── Linha consolidada (1 por vendedor/período) ─────────────────────────────
 
 export interface VendedorConsolidado {
   periodo: string;
@@ -68,16 +65,12 @@ export interface VendedorConsolidado {
   vendedor_id: string;
   vendedor_nome: string;
   supervisor: string;
-  regiao: string;
+  cidade_principal: string;
 
-  faturamento_realizado: number;
-  clientes_ativos: number;
-  pedidos: number;
-  ticket_medio: number;
-
-  custo_total: number;
-  percentual_custo: number;
+  faturamento: number;
+  custo: number;
   resultado_bruto: number;
+  percentual_custo: number;
   roi_comercial: number;
 
   faixa_faturamento: FaixaFaturamento;
@@ -85,29 +78,25 @@ export interface VendedorConsolidado {
   custo_status: "Alto" | "Baixo";
   quadrante_performance: Quadrante;
 
+  // Carteira
   total_clientes_carteira: number;
-  clientes_positivados_mes: number;
-  clientes_positivados_3m: number;
-  clientes_sem_compra_3m: number;
-  venda_media_por_cliente_mes: number;
-  venda_media_por_cliente_3m: number;
   total_municipios_atendidos: number;
-  total_setores_atendidos: number;
-  faturamento_total_3m_clientes: number;
+  ticket_medio: number; // faturamento / total_clientes_carteira
+  custo_por_cliente_carteira: number;
 }
 
 // ─── Dataset persistido ──────────────────────────────────────────────────────
 
 export interface Dataset {
-  comercial: BaseComercial[];
-  custo: BaseCusto[];
+  vendedor: BaseVendedor[];
   carteira: BaseCarteira[];
+  folha: BaseFolha[];
   updatedAt: string;
 }
 
 export const EMPTY_DATASET: Dataset = {
-  comercial: [],
-  custo: [],
+  vendedor: [],
   carteira: [],
+  folha: [],
   updatedAt: new Date().toISOString(),
 };

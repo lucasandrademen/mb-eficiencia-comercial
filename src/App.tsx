@@ -10,6 +10,7 @@ const Faixas = lazy(() => import("./pages/Faixas"));
 const Matriz = lazy(() => import("./pages/Matriz"));
 const Alertas = lazy(() => import("./pages/Alertas"));
 const Evolucao = lazy(() => import("./pages/Evolucao"));
+const Folha = lazy(() => import("./pages/Folha"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Fallback = () => (
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/matriz" element={<Matriz />} />
           <Route path="/alertas" element={<Alertas />} />
           <Route path="/evolucao" element={<Evolucao />} />
+          <Route path="/folha" element={<Folha />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

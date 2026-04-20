@@ -13,20 +13,20 @@ import { VendedorConsolidado } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type SortKey =
-  | "faturamento_realizado"
+  | "faturamento"
   | "percentual_custo"
   | "roi_comercial"
   | "resultado_bruto"
-  | "venda_media_por_cliente_mes"
-  | "clientes_positivados_mes";
+  | "ticket_medio"
+  | "total_clientes_carteira";
 
 const sortOptions: { key: SortKey; label: string; dir: "asc" | "desc" }[] = [
-  { key: "faturamento_realizado", label: "Maior faturamento", dir: "desc" },
+  { key: "faturamento", label: "Maior faturamento", dir: "desc" },
   { key: "percentual_custo", label: "Menor % de custo", dir: "asc" },
   { key: "roi_comercial", label: "Maior ROI", dir: "desc" },
   { key: "resultado_bruto", label: "Maior resultado bruto", dir: "desc" },
-  { key: "venda_media_por_cliente_mes", label: "Maior venda/cliente", dir: "desc" },
-  { key: "clientes_positivados_mes", label: "Mais clientes positivados", dir: "desc" },
+  { key: "ticket_medio", label: "Maior ticket médio", dir: "desc" },
+  { key: "total_clientes_carteira", label: "Mais clientes", dir: "desc" },
 ];
 
 const quadrantBadge: Record<string, "success" | "warning" | "default" | "destructive" | "muted"> = {
@@ -50,7 +50,7 @@ export default function Ranking() {
           (r) =>
             r.vendedor_nome.toLowerCase().includes(q.toLowerCase()) ||
             r.supervisor.toLowerCase().includes(q.toLowerCase()) ||
-            r.regiao.toLowerCase().includes(q.toLowerCase()),
+            r.cidade_principal.toLowerCase().includes(q.toLowerCase()),
         )
       : rows;
     const arr = [...filtered].sort((a, b) => {
@@ -125,12 +125,8 @@ export default function Ranking() {
               <Th>Faixa</Th>
               <Th>Quadrante</Th>
               <Th className="text-right">Clientes</Th>
-              <Th className="text-right">Pos. Mês</Th>
-              <Th className="text-right">Pos. 3M</Th>
-              <Th className="text-right">Vd/Cli Mês</Th>
-              <Th className="text-right">Vd/Cli 3M</Th>
-              <Th className="text-right">Munic.</Th>
-              <Th className="text-right">Setores</Th>
+              <Th className="text-right">Cidades</Th>
+              <Th className="text-right">Ticket médio</Th>
             </Tr>
           </THead>
           <TBody>
@@ -153,9 +149,9 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
         <div className="text-[11px] text-muted-foreground">{r.periodo}</div>
       </Td>
       <Td className="text-muted-foreground">{r.supervisor || "—"}</Td>
-      <Td className="text-muted-foreground">{r.regiao || "—"}</Td>
-      <Td className="text-right font-medium">{fmtBRL(r.faturamento_realizado, { compact: true })}</Td>
-      <Td className="text-right">{fmtBRL(r.custo_total, { compact: true })}</Td>
+      <Td className="text-muted-foreground">{r.cidade_principal || "—"}</Td>
+      <Td className="text-right font-medium">{fmtBRL(r.faturamento, { compact: true })}</Td>
+      <Td className="text-right">{fmtBRL(r.custo, { compact: true })}</Td>
       <Td className="text-right">
         <span className={r.percentual_custo > 0.12 ? "text-destructive font-medium" : ""}>
           {fmtPct(r.percentual_custo)}
@@ -178,12 +174,8 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
         </Badge>
       </Td>
       <Td className="text-right">{fmtNum(r.total_clientes_carteira)}</Td>
-      <Td className="text-right">{fmtNum(r.clientes_positivados_mes)}</Td>
-      <Td className="text-right">{fmtNum(r.clientes_positivados_3m)}</Td>
-      <Td className="text-right">{fmtBRL(r.venda_media_por_cliente_mes, { compact: true })}</Td>
-      <Td className="text-right">{fmtBRL(r.venda_media_por_cliente_3m, { compact: true })}</Td>
       <Td className="text-right">{fmtNum(r.total_municipios_atendidos)}</Td>
-      <Td className="text-right">{fmtNum(r.total_setores_atendidos)}</Td>
+      <Td className="text-right">{fmtBRL(r.ticket_medio, { compact: true })}</Td>
     </Tr>
   );
 }

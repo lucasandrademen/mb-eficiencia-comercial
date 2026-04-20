@@ -4,13 +4,10 @@ import {
   Percent,
   Activity,
   Users,
-  UserCheck,
-  Calendar,
   MapPin,
   ShoppingBag,
   Briefcase,
   TrendingUp,
-  Building2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { MetricCard } from "@/components/MetricCard";
@@ -22,6 +19,12 @@ import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, fmtROI, periodoLabel } from "@/lib/format";
 import { QUADRANTES_ORDER } from "@/lib/types";
 
+function descrPeriodos(periodos: string[], todos: number): string {
+  if (periodos.length === 0) return `Consolidado de ${todos} mês(es) importado(s).`;
+  if (periodos.length === 1) return `Indicadores de ${periodoLabel(periodos[0])}.`;
+  return `Consolidado de ${periodos.length} meses selecionados.`;
+}
+
 const quadrantColors: Record<string, string> = {
   Estrela: "success",
   "Trator caro": "warning",
@@ -30,7 +33,7 @@ const quadrantColors: Record<string, string> = {
 };
 
 export default function Resumo() {
-  const { rows, metrics, periodoSelecionado } = useData();
+  const { rows, metrics, periodosSelecionados, periodos } = useData();
 
   if (rows.length === 0) {
     return (
@@ -50,11 +53,7 @@ export default function Resumo() {
     <>
       <PageHeader
         title="Resumo Executivo"
-        subtitle={
-          periodoSelecionado === "ALL"
-            ? "Consolidado de todos os períodos importados."
-            : `Indicadores de ${periodoLabel(periodoSelecionado)}.`
-        }
+        subtitle={descrPeriodos(periodosSelecionados, periodos.length)}
         actions={<PeriodoFilter />}
       />
 
@@ -119,21 +118,21 @@ export default function Resumo() {
           icon={Users}
         />
         <MetricCard
-          title="Positivados no mês"
-          value={fmtNum(metrics.clientes_positivados_mes)}
-          icon={UserCheck}
-          variant="success"
+          title="Municípios atendidos"
+          value={fmtNum(metrics.media_municipios, 1)}
+          subtitle="Média por vendedor"
+          icon={MapPin}
         />
         <MetricCard
-          title="Positivados em 3M"
-          value={fmtNum(metrics.clientes_positivados_3m)}
-          icon={Calendar}
-        />
-        <MetricCard
-          title="Venda média/cliente"
-          value={fmtBRL(metrics.venda_media_cliente, { compact: true })}
-          subtitle={`Mediana: ${fmtBRL(metrics.mediana_venda_cliente, { compact: true })}`}
+          title="Ticket médio do time"
+          value={fmtBRL(metrics.ticket_medio_time, { compact: true })}
+          subtitle={`Mediana: ${fmtBRL(metrics.mediana_ticket, { compact: true })}`}
           icon={ShoppingBag}
+        />
+        <MetricCard
+          title="Clientes/vendedor"
+          value={fmtNum(rows.length ? metrics.total_clientes_carteira / rows.length : 0, 1)}
+          icon={Users}
         />
       </div>
 
@@ -161,24 +160,24 @@ export default function Resumo() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Cobertura territorial</CardTitle>
-            <CardDescription>Média por vendedor.</CardDescription>
+            <CardTitle>Carteira do time</CardTitle>
+            <CardDescription>Médias por vendedor.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Linha
+              icon={<Users className="h-4 w-4 text-primary" />}
+              label="Clientes/vendedor"
+              value={fmtNum(rows.length ? metrics.total_clientes_carteira / rows.length : 0, 1)}
+            />
+            <Linha
               icon={<MapPin className="h-4 w-4 text-primary" />}
-              label="Municípios atendidos"
+              label="Municípios/vendedor"
               value={fmtNum(metrics.media_municipios, 1)}
             />
             <Linha
-              icon={<Building2 className="h-4 w-4 text-primary" />}
-              label="Setores atendidos"
-              value={fmtNum(rows.reduce((s, r) => s + r.total_setores_atendidos, 0) / rows.length, 1)}
-            />
-            <Linha
-              icon={<Users className="h-4 w-4 text-primary" />}
-              label="Clientes/vendedor"
-              value={fmtNum(metrics.total_clientes_carteira / rows.length, 1)}
+              icon={<ShoppingBag className="h-4 w-4 text-primary" />}
+              label="Ticket médio"
+              value={fmtBRL(metrics.ticket_medio_time, { compact: true })}
             />
           </CardContent>
         </Card>

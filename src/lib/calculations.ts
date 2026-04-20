@@ -1,13 +1,54 @@
 import {
-  BaseCarteira,
-  BaseComercial,
-  BaseCusto,
+  BaseFolha,
+  BaseVendedor,
   Dataset,
   FaixaFaturamento,
   Quadrante,
   VendedorConsolidado,
 } from "./types";
 import { periodoToTrimestre } from "./format";
+
+// ─── Folha: índice por período+código e por período+nome normalizado ───────
+
+function normalizeNome(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+interface FolhaIndex {
+  byCodigo: Map<string, BaseFolha>;
+  byNome: Map<string, BaseFolha>;
+}
+
+function buildFolhaIndex(folha: BaseFolha[]): FolhaIndex {
+  const byCodigo = new Map<string, BaseFolha>();
+  const byNome = new Map<string, BaseFolha>();
+  for (const f of folha) {
+    byCodigo.set(`${f.periodo}|${f.codigo}`, f);
+    byNome.set(`${f.periodo}|${normalizeNome(f.nome)}`, f);
+  }
+  return { byCodigo, byNome };
+}
+
+function lookupCustoFolha(
+  idx: FolhaIndex,
+  periodo: string,
+  vendedor_id: string,
+  vendedor_nome: string,
+): BaseFolha | null {
+  const byCod = idx.byCodigo.get(`${periodo}|${vendedor_id}`);
+  if (byCod) return byCod;
+  const nome = normalizeNome(vendedor_nome);
+  if (nome) {
+    const byNome = idx.byNome.get(`${periodo}|${nome}`);
+    if (byNome) return byNome;
+  }
+  return null;
+}
 
 // ─── Faixas e quadrantes ────────────────────────────────────────────────────
 
@@ -44,153 +85,118 @@ export function median(values: number[]): number {
 // ─── Consolidação por (período, vendedor_id) ───────────────────────────────
 
 interface BuildOpts {
-  periodo?: string; // se vier, filtra; senão consolida tudo
+  periodos?: string[];
 }
 
 export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorConsolidado[] {
-  const filterPeriodo = opts.periodo;
-  const fComercial = filterPeriodo ? ds.comercial.filter((r) => r.periodo === filterPeriodo) : ds.comercial;
-  const fCusto = filterPeriodo ? ds.custo.filter((r) => r.periodo === filterPeriodo) : ds.custo;
-  const fCarteira = filterPeriodo ? ds.carteira.filter((r) => r.periodo === filterPeriodo) : ds.carteira;
+  const filterSet = opts.periodos && opts.periodos.length ? new Set(opts.periodos) : null;
+  const fVendedor = filterSet ? ds.vendedor.filter((r) => filterSet.has(r.periodo)) : ds.vendedor;
+  const fCarteira = filterSet ? ds.carteira.filter((r) => filterSet.has(r.periodo)) : ds.carteira;
 
-  // chave: periodo|vendedor_id
+  const folhaIdx = buildFolhaIndex(ds.folha ?? []);
   const k = (p: string, id: string) => `${p}|${id}`;
 
-  const comercialByKey = new Map<string, BaseComercial>();
-  for (const r of fComercial) comercialByKey.set(k(r.periodo, r.vendedor_id), r);
+  const vendedorByKey = new Map<string, BaseVendedor>();
+  for (const r of fVendedor) vendedorByKey.set(k(r.periodo, r.vendedor_id), r);
 
-  const custoByKey = new Map<string, BaseCusto>();
-  for (const r of fCusto) custoByKey.set(k(r.periodo, r.vendedor_id), r);
-
-  const carteiraByKey = new Map<string, BaseCarteira[]>();
+  const carteiraByKey = new Map<string, typeof fCarteira>();
   for (const r of fCarteira) {
     const key = k(r.periodo, r.vendedor_id);
     if (!carteiraByKey.has(key)) carteiraByKey.set(key, []);
     carteiraByKey.get(key)!.push(r);
   }
 
-  // garante linha por par (periodo, vendedor_id) presente em qualquer base
   const allKeys = new Set<string>();
-  for (const r of fComercial) allKeys.add(k(r.periodo, r.vendedor_id));
-  for (const r of fCusto) allKeys.add(k(r.periodo, r.vendedor_id));
+  for (const r of fVendedor) allKeys.add(k(r.periodo, r.vendedor_id));
   for (const r of fCarteira) allKeys.add(k(r.periodo, r.vendedor_id));
 
-  // 1) cria linhas básicas
   const rows: VendedorConsolidado[] = [];
   for (const key of allKeys) {
     const [periodo, vendedor_id] = key.split("|");
-    const com = comercialByKey.get(key);
-    const cus = custoByKey.get(key);
+    const vend = vendedorByKey.get(key);
     const cart = carteiraByKey.get(key) ?? [];
 
-    const vendedor_nome =
-      com?.vendedor_nome || cus?.vendedor_nome || cart[0]?.vendedor_nome || vendedor_id;
+    const vendedor_nome = vend?.vendedor_nome || vendedor_id;
 
-    const faturamento_realizado = com?.faturamento_realizado ?? 0;
-    const pedidos = com?.pedidos ?? 0;
-    const clientes_ativos = com?.clientes_ativos ?? 0;
-    const ticket_medio =
-      com?.ticket_medio != null && com.ticket_medio > 0
-        ? com.ticket_medio
-        : pedidos > 0
-        ? faturamento_realizado / pedidos
-        : 0;
+    const faturamento = vend?.faturamento ?? cart.reduce((s, c) => s + c.faturamento_cliente, 0);
+    const folhaMatch = lookupCustoFolha(folhaIdx, periodo, vendedor_id, vendedor_nome);
+    const custo = folhaMatch ? folhaMatch.bruto : (vend?.custo ?? 0);
+    const percentual_custo = faturamento > 0 ? custo / faturamento : 0;
+    const resultado_bruto = faturamento - custo;
+    const roi_comercial = custo > 0 ? faturamento / custo : 0;
 
-    const custo_total = cus?.custo_total ?? 0;
-    const percentual_custo = faturamento_realizado > 0 ? custo_total / faturamento_realizado : 0;
-    const resultado_bruto = faturamento_realizado - custo_total;
-    const roi_comercial = custo_total > 0 ? faturamento_realizado / custo_total : 0;
-
-    // ── carteira ──
     const distinctClientes = new Set(cart.map((c) => c.cliente_id));
-    const clientesPosMes = new Set(
-      cart.filter((c) => (c.faturamento_cliente_mes ?? 0) > 0).map((c) => c.cliente_id),
-    );
-    const clientesPos3m = new Set(
-      cart.filter((c) => (c.faturamento_cliente_3m ?? 0) > 0).map((c) => c.cliente_id),
-    );
     const total_clientes_carteira = distinctClientes.size;
-    const clientes_positivados_mes = clientesPosMes.size;
-    const clientes_positivados_3m = clientesPos3m.size;
-    const clientes_sem_compra_3m = Math.max(0, total_clientes_carteira - clientes_positivados_3m);
 
-    const faturamento_total_3m_clientes = cart.reduce(
-      (acc, c) => acc + (c.faturamento_cliente_3m ?? 0),
-      0,
-    );
+    const cidadesList = cart.map((c) => (c.cidade || "").trim()).filter(Boolean);
+    const total_municipios_atendidos = new Set(cidadesList).size;
 
-    const venda_media_por_cliente_mes =
-      clientes_positivados_mes > 0 ? faturamento_realizado / clientes_positivados_mes : 0;
-    const venda_media_por_cliente_3m =
-      clientes_positivados_3m > 0 ? faturamento_total_3m_clientes / clientes_positivados_3m : 0;
+    // cidade principal = cidade com mais clientes distintos
+    const clientesPorCidade = new Map<string, Set<string>>();
+    for (const c of cart) {
+      const cidade = (c.cidade || "").trim();
+      if (!cidade) continue;
+      if (!clientesPorCidade.has(cidade)) clientesPorCidade.set(cidade, new Set());
+      clientesPorCidade.get(cidade)!.add(c.cliente_id);
+    }
+    let cidade_principal = "—";
+    let maxClientes = 0;
+    for (const [c, set] of clientesPorCidade) {
+      if (set.size > maxClientes) {
+        cidade_principal = c;
+        maxClientes = set.size;
+      }
+    }
 
-    const total_municipios_atendidos = new Set(
-      cart.map((c) => (c.municipio || "").trim()).filter(Boolean),
-    ).size;
-    const total_setores_atendidos = new Set(
-      cart.map((c) => (c.setor || "").trim()).filter(Boolean),
-    ).size;
+    const ticket_medio = total_clientes_carteira > 0 ? faturamento / total_clientes_carteira : 0;
+    const custo_por_cliente_carteira =
+      total_clientes_carteira > 0 ? custo / total_clientes_carteira : 0;
 
     rows.push({
       periodo,
       trimestre: periodoToTrimestre(periodo),
       vendedor_id,
       vendedor_nome,
-      supervisor: com?.supervisor ?? "—",
-      regiao: com?.regiao ?? "—",
+      supervisor: vend?.supervisor ?? "—",
+      cidade_principal,
 
-      faturamento_realizado,
-      clientes_ativos,
-      pedidos,
-      ticket_medio,
-
-      custo_total,
-      percentual_custo,
+      faturamento,
+      custo,
       resultado_bruto,
+      percentual_custo,
       roi_comercial,
 
-      faixa_faturamento: classifyFaixa(faturamento_realizado),
+      faixa_faturamento: classifyFaixa(faturamento),
       faturamento_status: "Baixo",
       custo_status: "Alto",
       quadrante_performance: "—",
 
       total_clientes_carteira,
-      clientes_positivados_mes,
-      clientes_positivados_3m,
-      clientes_sem_compra_3m,
-      venda_media_por_cliente_mes,
-      venda_media_por_cliente_3m,
       total_municipios_atendidos,
-      total_setores_atendidos,
-      faturamento_total_3m_clientes,
+      ticket_medio,
+      custo_por_cliente_carteira,
     });
   }
 
-  // 2) calcula medianas POR PERÍODO (a divisão é feita no time do período)
+  // medianas POR PERÍODO
   const byPeriodo = new Map<string, VendedorConsolidado[]>();
   for (const r of rows) {
     if (!byPeriodo.has(r.periodo)) byPeriodo.set(r.periodo, []);
     byPeriodo.get(r.periodo)!.push(r);
   }
-
   for (const [, group] of byPeriodo) {
-    const fatList = group.map((r) => r.faturamento_realizado).filter((v) => v > 0);
+    const fatList = group.map((r) => r.faturamento).filter((v) => v > 0);
     const pctList = group.map((r) => r.percentual_custo).filter((v) => v > 0);
-    const medFat = median(fatList.length ? fatList : group.map((r) => r.faturamento_realizado));
+    const medFat = median(fatList.length ? fatList : group.map((r) => r.faturamento));
     const medPct = median(pctList.length ? pctList : group.map((r) => r.percentual_custo));
     for (const r of group) {
-      r.faturamento_status = r.faturamento_realizado >= medFat ? "Alto" : "Baixo";
+      r.faturamento_status = r.faturamento >= medFat ? "Alto" : "Baixo";
       r.custo_status = r.percentual_custo <= medPct ? "Baixo" : "Alto";
-      r.quadrante_performance = classifyQuadrante(
-        r.faturamento_realizado,
-        r.percentual_custo,
-        medFat,
-        medPct,
-      );
+      r.quadrante_performance = classifyQuadrante(r.faturamento, r.percentual_custo, medFat, medPct);
     }
   }
 
-  return rows.sort((a, b) => b.faturamento_realizado - a.faturamento_realizado);
+  return rows.sort((a, b) => b.faturamento - a.faturamento);
 }
 
 // ─── Métricas de time ──────────────────────────────────────────────────────
@@ -204,74 +210,48 @@ export interface TimeMetrics {
   faturamento_medio: number;
   custo_medio: number;
   total_clientes_carteira: number;
-  clientes_positivados_mes: number;
-  clientes_positivados_3m: number;
-  venda_media_cliente: number;
+  ticket_medio_time: number;
   media_municipios: number;
   resultado_bruto: number;
   mediana_faturamento: number;
   mediana_percentual_custo: number;
-  mediana_venda_cliente: number;
+  mediana_ticket: number;
 }
 
 export function computeTimeMetrics(rows: VendedorConsolidado[]): TimeMetrics {
   const n = rows.length;
-  if (n === 0) {
-    return {
-      faturamento_total: 0,
-      custo_total: 0,
-      percentual_medio: 0,
-      roi_medio: 0,
-      vendedores: 0,
-      faturamento_medio: 0,
-      custo_medio: 0,
-      total_clientes_carteira: 0,
-      clientes_positivados_mes: 0,
-      clientes_positivados_3m: 0,
-      venda_media_cliente: 0,
-      media_municipios: 0,
-      resultado_bruto: 0,
-      mediana_faturamento: 0,
-      mediana_percentual_custo: 0,
-      mediana_venda_cliente: 0,
-    };
-  }
-  const faturamento_total = rows.reduce((s, r) => s + r.faturamento_realizado, 0);
-  const custo_total = rows.reduce((s, r) => s + r.custo_total, 0);
+  const empty: TimeMetrics = {
+    faturamento_total: 0, custo_total: 0, percentual_medio: 0, roi_medio: 0, vendedores: 0,
+    faturamento_medio: 0, custo_medio: 0, total_clientes_carteira: 0,
+    ticket_medio_time: 0, media_municipios: 0,
+    resultado_bruto: 0,
+    mediana_faturamento: 0, mediana_percentual_custo: 0, mediana_ticket: 0,
+  };
+  if (n === 0) return empty;
+  const faturamento_total = rows.reduce((s, r) => s + r.faturamento, 0);
+  const custo_total = rows.reduce((s, r) => s + r.custo, 0);
   const percentual_medio = faturamento_total > 0 ? custo_total / faturamento_total : 0;
   const roi_medio = custo_total > 0 ? faturamento_total / custo_total : 0;
   const total_clientes_carteira = rows.reduce((s, r) => s + r.total_clientes_carteira, 0);
-  const clientes_positivados_mes = rows.reduce((s, r) => s + r.clientes_positivados_mes, 0);
-  const clientes_positivados_3m = rows.reduce((s, r) => s + r.clientes_positivados_3m, 0);
-  const venda_media_cliente =
-    clientes_positivados_mes > 0 ? faturamento_total / clientes_positivados_mes : 0;
+  const ticket_medio_time =
+    total_clientes_carteira > 0 ? faturamento_total / total_clientes_carteira : 0;
   const media_municipios = rows.reduce((s, r) => s + r.total_municipios_atendidos, 0) / n;
   return {
-    faturamento_total,
-    custo_total,
-    percentual_medio,
-    roi_medio,
-    vendedores: n,
-    faturamento_medio: faturamento_total / n,
-    custo_medio: custo_total / n,
-    total_clientes_carteira,
-    clientes_positivados_mes,
-    clientes_positivados_3m,
-    venda_media_cliente,
+    faturamento_total, custo_total, percentual_medio, roi_medio, vendedores: n,
+    faturamento_medio: faturamento_total / n, custo_medio: custo_total / n,
+    total_clientes_carteira, ticket_medio_time,
     media_municipios,
     resultado_bruto: faturamento_total - custo_total,
-    mediana_faturamento: median(rows.map((r) => r.faturamento_realizado)),
+    mediana_faturamento: median(rows.map((r) => r.faturamento)),
     mediana_percentual_custo: median(rows.map((r) => r.percentual_custo).filter((v) => v > 0)),
-    mediana_venda_cliente: median(
-      rows.map((r) => r.venda_media_por_cliente_mes).filter((v) => v > 0),
-    ),
+    mediana_ticket: median(rows.map((r) => r.ticket_medio).filter((v) => v > 0)),
   };
 }
 
 export function listPeriodos(ds: Dataset): string[] {
   const s = new Set<string>();
-  for (const r of ds.comercial) s.add(r.periodo);
-  for (const r of ds.custo) s.add(r.periodo);
+  for (const r of ds.vendedor) s.add(r.periodo);
   for (const r of ds.carteira) s.add(r.periodo);
+  for (const r of ds.folha ?? []) s.add(r.periodo);
   return [...s].sort();
 }

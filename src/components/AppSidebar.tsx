@@ -11,6 +11,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Briefcase,
+  Receipt,
 } from "lucide-react";
 
 const nav = [
@@ -20,6 +21,7 @@ const nav = [
   { to: "/matriz", label: "Matriz de Performance", icon: Grid3x3 },
   { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
   { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
+  { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
   { to: "/upload", label: "Importação", icon: Upload },
 ];
 

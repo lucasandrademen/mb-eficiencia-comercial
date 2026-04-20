@@ -34,12 +34,12 @@ export default function Alertas() {
           severidade: "alta",
         });
       }
-      if (r.faturamento_realizado > 0 && r.faturamento_realizado < 200_000) {
+      if (r.faturamento > 0 && r.faturamento < 200_000) {
         list.push({
           vendedor: r,
           motivo: "Faturamento abaixo de R$ 200 mil",
           indicador: "Faturamento",
-          valor: fmtBRL(r.faturamento_realizado),
+          valor: fmtBRL(r.faturamento),
           severidade: "alta",
         });
       }
@@ -63,44 +63,26 @@ export default function Alertas() {
       }
       if (
         r.percentual_custo > metrics.mediana_percentual_custo &&
-        r.faturamento_realizado < metrics.mediana_faturamento
+        r.faturamento < metrics.mediana_faturamento
       ) {
         list.push({
           vendedor: r,
           motivo: "Custo alto e faturamento abaixo da mediana do time",
           indicador: "Custo vs. Mediana",
-          valor: `${fmtPct(r.percentual_custo)} / ${fmtBRL(r.faturamento_realizado, { compact: true })}`,
-          severidade: "media",
-        });
-      }
-      if (r.total_clientes_carteira > 0 && r.clientes_positivados_mes / r.total_clientes_carteira < 0.4) {
-        list.push({
-          vendedor: r,
-          motivo: "Poucos clientes positivados no mês",
-          indicador: "Positivação",
-          valor: `${fmtNum(r.clientes_positivados_mes)} de ${fmtNum(r.total_clientes_carteira)}`,
-          severidade: "media",
-        });
-      }
-      if (r.clientes_sem_compra_3m > 0 && r.total_clientes_carteira > 0 && r.clientes_sem_compra_3m / r.total_clientes_carteira > 0.4) {
-        list.push({
-          vendedor: r,
-          motivo: "Muitos clientes sem compra nos últimos 3 meses",
-          indicador: "Sem compra 3M",
-          valor: `${fmtNum(r.clientes_sem_compra_3m)} de ${fmtNum(r.total_clientes_carteira)}`,
+          valor: `${fmtPct(r.percentual_custo)} / ${fmtBRL(r.faturamento, { compact: true })}`,
           severidade: "media",
         });
       }
       if (
-        r.venda_media_por_cliente_mes > 0 &&
-        metrics.mediana_venda_cliente > 0 &&
-        r.venda_media_por_cliente_mes < metrics.mediana_venda_cliente
+        r.ticket_medio > 0 &&
+        metrics.mediana_ticket > 0 &&
+        r.ticket_medio < metrics.mediana_ticket
       ) {
         list.push({
           vendedor: r,
-          motivo: "Venda média por cliente abaixo da mediana do time",
-          indicador: "Venda/cliente",
-          valor: fmtBRL(r.venda_media_por_cliente_mes, { compact: true }),
+          motivo: "Ticket médio abaixo da mediana do time",
+          indicador: "Ticket médio",
+          valor: fmtBRL(r.ticket_medio, { compact: true }),
           severidade: "media",
         });
       }
@@ -183,7 +165,7 @@ export default function Alertas() {
                   <Td>
                     <div className="font-medium">{a.vendedor.vendedor_nome}</div>
                     <div className="text-[11px] text-muted-foreground">
-                      {a.vendedor.supervisor || "—"} • {a.vendedor.regiao || "—"}
+                      {a.vendedor.supervisor || "—"} • {a.vendedor.cidade_principal || "—"}
                     </div>
                   </Td>
                   <Td className="text-muted-foreground">{periodoLabel(a.vendedor.periodo)}</Td>
