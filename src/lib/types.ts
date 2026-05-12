@@ -83,7 +83,26 @@ export interface VendedorConsolidado {
   total_municipios_atendidos: number;
   ticket_medio: number; // faturamento / total_clientes_carteira
   custo_por_cliente_carteira: number;
+
+  // Diagnóstico do match com a folha
+  folha_match_status: "codigo" | "nome_exato" | "nome_fuzzy" | "sem_match" | "sem_folha";
+  folha_match_nome?: string;
+
+  // Supervisor comercial (identificado pelo primeiro nome na planilha Preser)
+  is_supervisor: boolean;
 }
+
+// Lista de supervisores comerciais (match por prefixo do nome normalizado).
+// Cada entrada é comparada com as N primeiras palavras do nome do vendedor —
+// permite distinguir "Anderson Santiago" (supervisor) de outros "Anderson" (vendedores).
+export const SUPERVISOR_NAME_PREFIXES = [
+  "AMADEU",
+  "ANDERSON SANTIAGO",
+  "FRANK",
+  "LILIAN",
+  "RICARDO",
+  "MATHEUS",
+] as const;
 
 // ─── Dataset persistido ──────────────────────────────────────────────────────
 

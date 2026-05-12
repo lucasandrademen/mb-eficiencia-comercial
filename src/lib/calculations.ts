@@ -4,9 +4,14 @@ import {
   Dataset,
   FaixaFaturamento,
   Quadrante,
+  SUPERVISOR_NAME_PREFIXES,
   VendedorConsolidado,
 } from "./types";
 import { periodoToTrimestre } from "./format";
+
+// Encargos patronais (FGTS + INSS + 13º + férias + provisões).
+// Mesma taxa usada no relatório de folha mensal (mb-payroll-insights).
+export const ENCARGOS_PCT = 0.6746;
 
 // ─── Folha: índice por período+código e por período+nome normalizado ───────
 
@@ -15,23 +20,51 @@ function normalizeNome(s: string): string {
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Preposições comuns em nomes — descartadas na comparação por token.
+const STOPWORDS = new Set(["DA", "DE", "DO", "DAS", "DOS", "E", "DI", "DU"]);
+
+export function isSupervisorNome(nome: string): boolean {
+  const norm = normalizeNome(nome);
+  if (!norm) return false;
+  return (SUPERVISOR_NAME_PREFIXES as readonly string[]).some(
+    (pref) => norm === pref || norm.startsWith(pref + " "),
+  );
+}
+
+function tokenize(nome: string): string[] {
+  return normalizeNome(nome)
+    .split(" ")
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
+}
+
 interface FolhaIndex {
-  byCodigo: Map<string, BaseFolha>;
-  byNome: Map<string, BaseFolha>;
+  byCodigoPeriodo: Map<string, BaseFolha>;
+  byNomePeriodo: Map<string, BaseFolha>;
+  porPeriodo: Map<string, BaseFolha[]>;
 }
 
 function buildFolhaIndex(folha: BaseFolha[]): FolhaIndex {
-  const byCodigo = new Map<string, BaseFolha>();
-  const byNome = new Map<string, BaseFolha>();
+  const byCodigoPeriodo = new Map<string, BaseFolha>();
+  const byNomePeriodo = new Map<string, BaseFolha>();
+  const porPeriodo = new Map<string, BaseFolha[]>();
   for (const f of folha) {
-    byCodigo.set(`${f.periodo}|${f.codigo}`, f);
-    byNome.set(`${f.periodo}|${normalizeNome(f.nome)}`, f);
+    byCodigoPeriodo.set(`${f.periodo}|${f.codigo}`, f);
+    byNomePeriodo.set(`${f.periodo}|${normalizeNome(f.nome)}`, f);
+    if (!porPeriodo.has(f.periodo)) porPeriodo.set(f.periodo, []);
+    porPeriodo.get(f.periodo)!.push(f);
   }
-  return { byCodigo, byNome };
+  return { byCodigoPeriodo, byNomePeriodo, porPeriodo };
+}
+
+type MatchType = "codigo" | "nome_exato" | "nome_fuzzy" | "sem_match";
+export interface FolhaLookupResult {
+  folha: BaseFolha | null;
+  matchType: MatchType;
 }
 
 function lookupCustoFolha(
@@ -39,15 +72,46 @@ function lookupCustoFolha(
   periodo: string,
   vendedor_id: string,
   vendedor_nome: string,
-): BaseFolha | null {
-  const byCod = idx.byCodigo.get(`${periodo}|${vendedor_id}`);
-  if (byCod) return byCod;
+): FolhaLookupResult {
+  // 1. Match exato por código (periodo + vendedor_id)
+  const byCod = idx.byCodigoPeriodo.get(`${periodo}|${vendedor_id}`);
+  if (byCod) return { folha: byCod, matchType: "codigo" };
+
+  // 2. Match exato por nome normalizado
   const nome = normalizeNome(vendedor_nome);
   if (nome) {
-    const byNome = idx.byNome.get(`${periodo}|${nome}`);
-    if (byNome) return byNome;
+    const byNome = idx.byNomePeriodo.get(`${periodo}|${nome}`);
+    if (byNome) return { folha: byNome, matchType: "nome_exato" };
   }
-  return null;
+
+  // 3. Match fuzzy por tokens (primeiro + último nome, ou ≥2 tokens em comum)
+  const vendTokens = tokenize(vendedor_nome);
+  if (vendTokens.length === 0) return { folha: null, matchType: "sem_match" };
+
+  const candidatos = idx.porPeriodo.get(periodo) ?? [];
+  let melhor: { folha: BaseFolha; score: number } | null = null;
+
+  for (const f of candidatos) {
+    const folhaTokens = tokenize(f.nome);
+    if (folhaTokens.length === 0) continue;
+
+    const comuns = vendTokens.filter((t) => folhaTokens.includes(t));
+    const firstMatch = vendTokens[0] === folhaTokens[0];
+    const lastMatch =
+      vendTokens[vendTokens.length - 1] === folhaTokens[folhaTokens.length - 1];
+
+    let score = 0;
+    if (firstMatch && lastMatch) score = 100 + comuns.length;
+    else if (comuns.length >= 2) score = 50 + comuns.length;
+    else if (firstMatch && comuns.length >= 1) score = 30;
+
+    if (score > 0 && (!melhor || score > melhor.score)) {
+      melhor = { folha: f, score };
+    }
+  }
+
+  if (melhor) return { folha: melhor.folha, matchType: "nome_fuzzy" };
+  return { folha: null, matchType: "sem_match" };
 }
 
 // ─── Faixas e quadrantes ────────────────────────────────────────────────────
@@ -116,11 +180,25 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
     const vend = vendedorByKey.get(key);
     const cart = carteiraByKey.get(key) ?? [];
 
-    const vendedor_nome = vend?.vendedor_nome || vendedor_id;
+    const vendedor_nome = (vend?.vendedor_nome || vendedor_id)
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/\([^)]*$/g, " ") // parênteses órfãos
+      .replace(/\s+/g, " ")
+      .trim();
 
     const faturamento = vend?.faturamento ?? cart.reduce((s, c) => s + c.faturamento_cliente, 0);
-    const folhaMatch = lookupCustoFolha(folhaIdx, periodo, vendedor_id, vendedor_nome);
-    const custo = folhaMatch ? folhaMatch.bruto : (vend?.custo ?? 0);
+    const temFolha = (ds.folha ?? []).some((f) => f.periodo === periodo);
+    const { folha: folhaMatch, matchType } = lookupCustoFolha(
+      folhaIdx,
+      periodo,
+      vendedor_id,
+      vendedor_nome,
+    );
+    // Custo real para a empresa = salário bruto + encargos patronais.
+    const custo = folhaMatch ? folhaMatch.bruto * (1 + ENCARGOS_PCT) : (vend?.custo ?? 0);
+    const folha_match_status: VendedorConsolidado["folha_match_status"] = !temFolha
+      ? "sem_folha"
+      : matchType;
     const percentual_custo = faturamento > 0 ? custo / faturamento : 0;
     const resultado_bruto = faturamento - custo;
     const roi_comercial = custo > 0 ? faturamento / custo : 0;
@@ -175,6 +253,11 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
       total_municipios_atendidos,
       ticket_medio,
       custo_por_cliente_carteira,
+
+      folha_match_status,
+      folha_match_nome: folhaMatch?.nome,
+
+      is_supervisor: isSupervisorNome(vendedor_nome),
     });
   }
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PeriodoFilter } from "@/components/PeriodoFilter";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,21 +13,19 @@ import { VendedorConsolidado } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type SortKey =
+  | "vendedor_nome"
+  | "supervisor"
+  | "cidade_principal"
   | "faturamento"
+  | "custo"
   | "percentual_custo"
-  | "roi_comercial"
   | "resultado_bruto"
-  | "ticket_medio"
-  | "total_clientes_carteira";
+  | "roi_comercial"
+  | "total_clientes_carteira"
+  | "total_municipios_atendidos"
+  | "ticket_medio";
 
-const sortOptions: { key: SortKey; label: string; dir: "asc" | "desc" }[] = [
-  { key: "faturamento", label: "Maior faturamento", dir: "desc" },
-  { key: "percentual_custo", label: "Menor % de custo", dir: "asc" },
-  { key: "roi_comercial", label: "Maior ROI", dir: "desc" },
-  { key: "resultado_bruto", label: "Maior resultado bruto", dir: "desc" },
-  { key: "ticket_medio", label: "Maior ticket médio", dir: "desc" },
-  { key: "total_clientes_carteira", label: "Mais clientes", dir: "desc" },
-];
+type Dir = "asc" | "desc";
 
 const quadrantBadge: Record<string, "success" | "warning" | "default" | "destructive" | "muted"> = {
   Estrela: "success",
@@ -39,10 +37,28 @@ const quadrantBadge: Record<string, "success" | "warning" | "default" | "destruc
 
 export default function Ranking() {
   const { rows } = useData();
-  const [sortIdx, setSortIdx] = useState(0);
   const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("faturamento");
+  const [dir, setDir] = useState<Dir>("desc");
 
-  const sortConf = sortOptions[sortIdx];
+  const onHeaderClick = (key: SortKey) => {
+    if (sortKey === key) setDir(dir === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      // Numéricos default desc, textos default asc
+      const isNumeric = [
+        "faturamento",
+        "custo",
+        "percentual_custo",
+        "resultado_bruto",
+        "roi_comercial",
+        "total_clientes_carteira",
+        "total_municipios_atendidos",
+        "ticket_medio",
+      ].includes(key);
+      setDir(isNumeric ? "desc" : "asc");
+    }
+  };
 
   const sorted = useMemo(() => {
     const filtered = q
@@ -54,12 +70,16 @@ export default function Ranking() {
         )
       : rows;
     const arr = [...filtered].sort((a, b) => {
-      const va = a[sortConf.key] as number;
-      const vb = b[sortConf.key] as number;
-      return sortConf.dir === "desc" ? vb - va : va - vb;
+      const va = a[sortKey] as number | string;
+      const vb = b[sortKey] as number | string;
+      const cmp =
+        typeof va === "number" && typeof vb === "number"
+          ? va - vb
+          : String(va).localeCompare(String(vb), "pt-BR");
+      return dir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [rows, sortConf, q]);
+  }, [rows, sortKey, dir, q]);
 
   if (rows.length === 0) {
     return (
@@ -74,7 +94,7 @@ export default function Ranking() {
     <>
       <PageHeader
         title="Ranking de Vendedores"
-        subtitle={`${fmtNum(sorted.length)} vendedor(es) — ordenado por ${sortConf.label.toLowerCase()}.`}
+        subtitle={`${fmtNum(sorted.length)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`}
         actions={<PeriodoFilter />}
       />
 
@@ -89,22 +109,12 @@ export default function Ranking() {
               className="pl-8"
             />
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {sortOptions.map((opt, i) => (
-              <button
-                key={opt.key + opt.dir}
-                onClick={() => setSortIdx(i)}
-                className={cn(
-                  "rounded-full px-3 py-1 text-xs font-medium transition-colors flex items-center gap-1",
-                  i === sortIdx
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
-                )}
-              >
-                {opt.label}
-                {opt.dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Ordenando por</span>
+            <Badge variant="default" className="gap-1">
+              {sortLabels[sortKey]}
+              {dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />}
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -114,19 +124,19 @@ export default function Ranking() {
           <THead>
             <Tr>
               <Th className="w-[44px]">#</Th>
-              <Th>Vendedor</Th>
-              <Th>Supervisor</Th>
-              <Th>Região</Th>
-              <Th className="text-right">Faturamento</Th>
-              <Th className="text-right">Custo</Th>
-              <Th className="text-right">% Custo</Th>
-              <Th className="text-right">Result. Bruto</Th>
-              <Th className="text-right">ROI</Th>
+              <SortTh label="Vendedor" k="vendedor_nome" sortKey={sortKey} dir={dir} onClick={onHeaderClick} />
+              <SortTh label="Supervisor" k="supervisor" sortKey={sortKey} dir={dir} onClick={onHeaderClick} />
+              <SortTh label="Região" k="cidade_principal" sortKey={sortKey} dir={dir} onClick={onHeaderClick} />
+              <SortTh label="Faturamento" k="faturamento" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="Custo" k="custo" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="% Custo" k="percentual_custo" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="Result. Bruto" k="resultado_bruto" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="ROI" k="roi_comercial" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
               <Th>Faixa</Th>
               <Th>Quadrante</Th>
-              <Th className="text-right">Clientes</Th>
-              <Th className="text-right">Cidades</Th>
-              <Th className="text-right">Ticket médio</Th>
+              <SortTh label="Clientes" k="total_clientes_carteira" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="Cidades" k="total_municipios_atendidos" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
+              <SortTh label="Ticket médio" k="ticket_medio" sortKey={sortKey} dir={dir} onClick={onHeaderClick} align="right" />
             </Tr>
           </THead>
           <TBody>
@@ -137,6 +147,58 @@ export default function Ranking() {
         </Table>
       </Card>
     </>
+  );
+}
+
+const sortLabels: Record<SortKey, string> = {
+  vendedor_nome: "Vendedor",
+  supervisor: "Supervisor",
+  cidade_principal: "Região",
+  faturamento: "Faturamento",
+  custo: "Custo",
+  percentual_custo: "% Custo",
+  resultado_bruto: "Result. Bruto",
+  roi_comercial: "ROI",
+  total_clientes_carteira: "Clientes",
+  total_municipios_atendidos: "Cidades",
+  ticket_medio: "Ticket médio",
+};
+
+function SortTh({
+  label,
+  k,
+  sortKey,
+  dir,
+  onClick,
+  align,
+}: {
+  label: string;
+  k: SortKey;
+  sortKey: SortKey;
+  dir: Dir;
+  onClick: (k: SortKey) => void;
+  align?: "right";
+}) {
+  const active = sortKey === k;
+  return (
+    <Th className={align === "right" ? "text-right" : ""}>
+      <button
+        type="button"
+        onClick={() => onClick(k)}
+        className={cn(
+          "inline-flex items-center gap-1 text-inherit hover:text-foreground transition-colors",
+          align === "right" && "flex-row-reverse",
+          active && "text-primary",
+        )}
+      >
+        {label}
+        {active ? (
+          dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </button>
+    </Th>
   );
 }
 

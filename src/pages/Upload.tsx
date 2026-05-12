@@ -2,9 +2,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload as UploadIcon,
-  FileSpreadsheet,
   FileText,
-  Download,
   Check,
   Trash2,
   AlertCircle,
@@ -15,39 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { useData } from "@/contexts/DataContext";
-import {
-  downloadTemplate,
-  mapBaseCarteira,
-  mapBaseVendedor,
-  readSheetRows,
-} from "@/lib/parseExcel";
+import { parsePreserPdf } from "@/lib/parsePreserPdf";
 import { parseFolhaPdf } from "@/lib/parseFolhaPdf";
 import { fmtNum, periodoLabel } from "@/lib/format";
-import { BaseCarteira, BaseFolha, BaseVendedor } from "@/lib/types";
+import { BaseFolha, BaseVendedor } from "@/lib/types";
 
-type Kind = "vendedor" | "carteira";
-
-const labels: Record<Kind, { title: string; desc: string; campos: string[] }> = {
-  vendedor: {
-    title: "Base Vendedor",
-    desc: "Uma linha por vendedor no mês: faturamento total e custo total.",
-    campos: ["periodo*", "vendedor_id", "vendedor_nome", "supervisor", "faturamento", "custo"],
-  },
-  carteira: {
-    title: "Base Carteira",
-    desc: "Uma linha por cliente no mês — gera qtd de clientes, cidades e ticket médio.",
-    campos: [
-      "periodo*",
-      "vendedor_id",
-      "cliente_id",
-      "cliente_nome",
-      "cidade",
-      "faturamento_cliente",
-    ],
-  },
-};
-
-// gera lista de meses 2025/2026 + ano atual
 function mesesPicker(): string[] {
   const out: string[] = [];
   const hoje = new Date();
@@ -60,12 +30,16 @@ function mesesPicker(): string[] {
   return out;
 }
 
+const defaultMes = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
 export default function Upload() {
   const { dataset, mergeDataset, reset, periodos } = useData();
 
   const totals = {
     vendedor: dataset.vendedor.length,
-    carteira: dataset.carteira.length,
     folha: dataset.folha.length,
   };
 
@@ -73,9 +47,9 @@ export default function Upload() {
     <div>
       <PageHeader
         title="Importação de Dados"
-        subtitle="Carregue uma planilha por mês. As bases ficam salvas no seu navegador (localStorage)."
+        subtitle="Carregue os 2 PDFs do mês: Consolidado Preser (faturamento) e Folha de Pagamento (custo com encargos)."
         actions={
-          totals.vendedor + totals.carteira + totals.folha > 0 ? (
+          totals.vendedor + totals.folha > 0 ? (
             <Button
               variant="outline"
               onClick={() => {
@@ -91,10 +65,9 @@ export default function Upload() {
         }
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <SummaryCard label="Linhas — Vendedor" value={totals.vendedor} />
-        <SummaryCard label="Linhas — Carteira" value={totals.carteira} />
-        <SummaryCard label="Linhas — Folha" value={totals.folha} />
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <SummaryCard label="Vendedores (Preser)" value={totals.vendedor} />
+        <SummaryCard label="Colaboradores (Folha)" value={totals.folha} />
       </div>
 
       {periodos.length > 0 && (
@@ -106,18 +79,10 @@ export default function Upload() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <FonteUploader
-          kind="vendedor"
-          mapper={mapBaseVendedor}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <PreserUploader
           existing={dataset.vendedor}
           onParsed={(rows) => mergeDataset({ vendedor: rows })}
-        />
-        <FonteUploader
-          kind="carteira"
-          mapper={mapBaseCarteira}
-          existing={dataset.carteira}
-          onParsed={(rows) => mergeDataset({ carteira: rows })}
         />
         <FolhaUploader
           existing={dataset.folha}
@@ -129,27 +94,23 @@ export default function Upload() {
         <CardHeader>
           <CardTitle>Como funciona</CardTitle>
           <CardDescription>
-            Cada planilha representa um <strong>mês específico</strong>. Selecione o mês antes de
-            importar — se a planilha trouxer a coluna <code className="text-foreground">periodo</code>,
-            ela tem prioridade; caso contrário, vale o mês selecionado.
+            Cada mês tem dois PDFs: o <strong>Consolidado Preser</strong> (traz SETOR, VENDEDOR e
+            FATURAMENTO) e a <strong>Folha de Pagamento</strong> (traz o salário bruto). O custo real
+            de cada vendedor é calculado como <code className="text-foreground">bruto × 1,6746</code> —
+            incluindo encargos patronais (FGTS, INSS, 13º, férias e provisões).
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            <span className="font-medium text-foreground">Cruzamento:</span> as bases são unidas pela
-            chave <code className="text-foreground">periodo + vendedor_id</code>. Da carteira saem
-            quantidade de clientes, cidades atendidas e ticket médio (faturamento ÷ clientes).
+            <span className="font-medium text-foreground">Cruzamento:</span> o match entre os dois PDFs
+            é feito pelo <strong>código do vendedor</strong> e, se falhar, pelo <strong>nome</strong>
+            (tolerante a maiúsculas, acentos e pequenas variações). Vendedores sem match são
+            sinalizados na página Resumo.
           </p>
           <p>
-            <span className="font-medium text-foreground">Cliente sem compra:</span> pode incluir a
-            linha com <code className="text-foreground">faturamento_cliente = 0</code> — entra no
-            total da carteira do vendedor.
-          </p>
-          <p>
-            <span className="font-medium text-foreground">Aceitamos:</span>{" "}
-            <code className="text-foreground">.xlsx</code>, <code className="text-foreground">.xls</code>,{" "}
-            <code className="text-foreground">.csv</code> — nomes de coluna são normalizados (acentos
-            e caixa não importam).
+            <span className="font-medium text-foreground">Supervisores:</span> identificados
+            automaticamente pelo nome (Amadeu, Anderson Santiago, Frank, Lilian, Ricardo, Matheus) —
+            aparecem em aba separada na Matriz de Performance.
           </p>
         </CardContent>
       </Card>
@@ -166,55 +127,40 @@ function SummaryCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function FonteUploader<T extends BaseVendedor | BaseCarteira>({
-  kind,
-  mapper,
-  onParsed,
+function PreserUploader({
   existing,
+  onParsed,
 }: {
-  kind: Kind;
-  mapper: (rows: Record<string, any>[], defaultPeriodo?: string) => T[];
-  onParsed: (rows: T[]) => void;
-  existing: T[];
+  existing: BaseVendedor[];
+  onParsed: (rows: BaseVendedor[]) => void;
 }) {
-  const meta = labels[kind];
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-
+  const [mesSel, setMesSel] = useState<string>(defaultMes());
   const meses = mesesPicker();
-  const defaultMes = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
-  const [mesSel, setMesSel] = useState<string>(defaultMes);
 
-  const handleFile = async (file: File, append: boolean) => {
+  const handleFile = async (file: File) => {
     setBusy(true);
     setLastError(null);
     try {
-      const raw = await readSheetRows(file);
-      const parsed = mapper(raw, mesSel);
+      const parsed = await parsePreserPdf(file, mesSel);
       if (parsed.length === 0) {
         setLastError(
-          "Nenhuma linha válida encontrada. Verifique se vendedor_id" +
-            (kind === "carteira" ? " e cliente_id" : "") +
-            " estão preenchidos.",
+          "Nenhum vendedor encontrado no PDF. Verifique se o arquivo é o Consolidado Preser.",
         );
-        toast.error("Nenhuma linha válida encontrada.");
+        toast.error("Nenhum vendedor encontrado.");
         return;
       }
-      // se append: remove linhas existentes do mesmo período antes de mesclar (re-upload do mesmo mês substitui)
-      const periodosNovos = new Set(parsed.map((r: any) => r.periodo));
-      const base = append ? existing.filter((r: any) => !periodosNovos.has(r.periodo)) : [];
-      const next = [...base, ...parsed];
-      onParsed(next);
+      // Substitui todas as linhas do período (re-upload do mesmo mês).
+      const base = existing.filter((r) => r.periodo !== mesSel);
+      onParsed([...base, ...parsed]);
       toast.success(
-        `${parsed.length} linha(s) importada(s) — ${meta.title} (${periodoLabel(mesSel)}).`,
+        `${parsed.length} vendedor(es) importado(s) — Preser (${periodoLabel(mesSel)}).`,
       );
     } catch (e: any) {
-      setLastError(e?.message || "Erro ao ler arquivo.");
-      toast.error("Erro ao ler arquivo.");
+      setLastError(e?.message || "Erro ao ler PDF.");
+      toast.error("Erro ao ler PDF.");
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -227,10 +173,12 @@ function FonteUploader<T extends BaseVendedor | BaseCarteira>({
         <div className="flex items-start justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4 text-primary" />
-              {meta.title}
+              <FileText className="h-4 w-4 text-primary" />
+              Consolidado Preser (PDF)
             </CardTitle>
-            <CardDescription className="mt-1">{meta.desc}</CardDescription>
+            <CardDescription className="mt-1">
+              PDF do "Consolidado Preser - Equipe Comercial". Extrai setor, vendedor e faturamento.
+            </CardDescription>
           </div>
           {existing.length > 0 && (
             <Badge variant="success" className="gap-1">
@@ -242,17 +190,17 @@ function FonteUploader<T extends BaseVendedor | BaseCarteira>({
       <CardContent className="flex flex-1 flex-col gap-3">
         <div>
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Campos esperados
+            O que é extraído
           </p>
           <div className="flex flex-wrap gap-1">
-            {meta.campos.map((c) => (
+            {["setor (código)", "vendedor (nome)", "faturamento"].map((c) => (
               <Badge key={c} variant="outline" className="font-mono text-[10px]">
                 {c}
               </Badge>
             ))}
           </div>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            * <code>periodo</code> é opcional na planilha — usa o mês selecionado abaixo se faltar.
+            Linhas sem setor numérico (FERISTA, PROSPECTOR, totais) são ignoradas.
           </p>
         </div>
 
@@ -260,11 +208,7 @@ function FonteUploader<T extends BaseVendedor | BaseCarteira>({
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Mês de referência
           </p>
-          <Select
-            value={mesSel}
-            onChange={(e) => setMesSel(e.target.value)}
-            className="w-full"
-          >
+          <Select value={mesSel} onChange={(e) => setMesSel(e.target.value)} className="w-full">
             {meses.map((m) => (
               <option key={m} value={m}>
                 {periodoLabel(m)}
@@ -276,21 +220,18 @@ function FonteUploader<T extends BaseVendedor | BaseCarteira>({
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.xls,.csv"
+          accept=".pdf,application/pdf"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) handleFile(f, true);
+            if (f) handleFile(f);
           }}
         />
 
         <div className="mt-auto flex flex-col gap-2 pt-2">
           <Button onClick={() => inputRef.current?.click()} disabled={busy}>
             <UploadIcon className="h-4 w-4" />
-            {busy ? "Lendo arquivo…" : `Importar ${periodoLabel(mesSel)}`}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => downloadTemplate(kind)}>
-            <Download className="h-4 w-4" /> Baixar modelo .xlsx
+            {busy ? "Lendo PDF…" : `Importar Preser ${periodoLabel(mesSel)}`}
           </Button>
         </div>
 
@@ -305,7 +246,6 @@ function FonteUploader<T extends BaseVendedor | BaseCarteira>({
   );
 }
 
-
 function FolhaUploader({
   existing,
   onParsed,
@@ -316,13 +256,8 @@ function FolhaUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-
+  const [mesSel, setMesSel] = useState<string>(defaultMes());
   const meses = mesesPicker();
-  const defaultMes = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
-  const [mesSel, setMesSel] = useState<string>(defaultMes);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -344,7 +279,6 @@ function FolhaUploader({
         descontos: e.descontos,
         liquido: e.liquido,
       }));
-      // substitui o mês importado
       const base = existing.filter((r) => r.periodo !== mesSel);
       onParsed([...base, ...parsed]);
       toast.success(
@@ -369,7 +303,7 @@ function FolhaUploader({
               Folha de Pagamento (PDF)
             </CardTitle>
             <CardDescription className="mt-1">
-              Importe o PDF da folha — o custo de cada vendedor é preenchido automaticamente.
+              Traz o salário bruto — o custo real vira <code>bruto × 1,6746</code> (com encargos).
             </CardDescription>
           </div>
           {existing.length > 0 && (
@@ -392,7 +326,7 @@ function FolhaUploader({
             ))}
           </div>
           <p className="mt-1 text-[10px] text-muted-foreground">
-            Match com vendedor por <code>código</code> ou nome. O <code>bruto</code> vira o custo.
+            Match com o Preser por código ou nome (tolerante a acentos e variações).
           </p>
         </div>
 
@@ -400,11 +334,7 @@ function FolhaUploader({
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Mês de referência
           </p>
-          <Select
-            value={mesSel}
-            onChange={(e) => setMesSel(e.target.value)}
-            className="w-full"
-          >
+          <Select value={mesSel} onChange={(e) => setMesSel(e.target.value)} className="w-full">
             {meses.map((m) => (
               <option key={m} value={m}>
                 {periodoLabel(m)}

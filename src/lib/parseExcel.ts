@@ -122,6 +122,62 @@ export function mapBaseCarteira(
     .filter(Boolean) as BaseCarteira[];
 }
 
+/**
+ * Planilha "Consolidado Preser - Equipe Comercial":
+ * - Cabeçalho SETOR | VENDEDOR | OBJETIVO | FATURAMENTO | % | COMISSÃO | %
+ * - Seções por segmento (BRL1, FARMA, BRN2, BRN8) com headers mesclados
+ * - Extrai apenas vendedor_id (SETOR), vendedor_nome, faturamento.
+ */
+export async function parsePreserSheet(file: File, periodo: string): Promise<BaseVendedor[]> {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const out: BaseVendedor[] = [];
+  const vistos = new Set<string>();
+
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+
+    // Localiza a coluna de SETOR, VENDEDOR e FATURAMENTO escaneando os primeiros 20 cabeçalhos.
+    let colSetor = -1;
+    let colNome = -1;
+    let colFat = -1;
+    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+      const row = aoa[i] ?? [];
+      for (let j = 0; j < row.length; j++) {
+        const v = norm(toStr(row[j]));
+        if (v === "setor") colSetor = j;
+        if (v === "vendedor") colNome = j;
+        if (v === "faturamento" || v === "faturamento_realizado") colFat = j;
+      }
+      if (colSetor >= 0 && colNome >= 0 && colFat >= 0) break;
+    }
+    if (colSetor < 0 || colNome < 0 || colFat < 0) continue;
+
+    for (const row of aoa) {
+      const setorRaw = toStr(row[colSetor]);
+      const nomeRaw = toStr(row[colNome]);
+      const fat = toNum(row[colFat]);
+      if (!setorRaw || !nomeRaw) continue;
+      // Só aceita SETOR numérico (exclui "FERISTA", "PROSPECTOR", "SETOR", linhas de totais etc.)
+      if (!/^\d+$/.test(setorRaw)) continue;
+      if (fat <= 0) continue;
+      const key = `${setorRaw}|${nomeRaw.toUpperCase()}`;
+      if (vistos.has(key)) continue;
+      vistos.add(key);
+      out.push({
+        periodo,
+        vendedor_id: setorRaw,
+        vendedor_nome: nomeRaw,
+        supervisor: "",
+        faturamento: fat,
+        custo: 0,
+      });
+    }
+  }
+  return out;
+}
+
 // ─── template downloads ────────────────────────────────────────────────────
 
 export function downloadTemplate(kind: "vendedor" | "carteira") {

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TBody, THead, Td, Th, Tr } from "@/components/ui/table";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
+import { ENCARGOS_PCT } from "@/lib/calculations";
 import { BaseFolha } from "@/lib/types";
 
 export default function Folha() {
@@ -25,10 +26,14 @@ export default function Folha() {
     const bruto = rows.reduce((s, r) => s + r.bruto, 0);
     const descontos = rows.reduce((s, r) => s + r.descontos, 0);
     const liquido = rows.reduce((s, r) => s + r.liquido, 0);
+    const encargos = bruto * ENCARGOS_PCT;
+    const custoTotal = bruto + encargos;
     return {
       bruto,
       descontos,
       liquido,
+      encargos,
+      custoTotal,
       headcount: new Set(rows.map((r) => r.codigo)).size,
       pct_desc: bruto > 0 ? descontos / bruto : 0,
     };
@@ -93,23 +98,30 @@ export default function Folha() {
         actions={<PeriodoFilter />}
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <MetricCard
-          title="Custo bruto total"
+          title="Bruto total"
           value={fmtBRL(totals.bruto, { compact: true })}
           subtitle={fmtBRL(totals.bruto)}
           icon={DollarSign}
           variant="primary"
         />
         <MetricCard
-          title="Descontos"
-          value={fmtBRL(totals.descontos, { compact: true })}
-          subtitle={`${fmtPct(totals.pct_desc)} do bruto`}
+          title="Encargos patronais"
+          value={fmtBRL(totals.encargos, { compact: true })}
+          subtitle={`${fmtPct(ENCARGOS_PCT)} sobre o bruto`}
           icon={TrendingDown}
           variant="warning"
         />
         <MetricCard
-          title="Líquido total"
+          title="Custo total empresa"
+          value={fmtBRL(totals.custoTotal, { compact: true })}
+          subtitle={fmtBRL(totals.custoTotal)}
+          icon={Receipt}
+          variant="destructive"
+        />
+        <MetricCard
+          title="Líquido pago"
           value={fmtBRL(totals.liquido, { compact: true })}
           subtitle={fmtBRL(totals.liquido)}
           icon={Receipt}
@@ -183,7 +195,8 @@ export default function Folha() {
                   <Th>Depto.</Th>
                   <Th>Período</Th>
                   <Th className="text-right">Bruto</Th>
-                  <Th className="text-right">Descontos</Th>
+                  <Th className="text-right">Encargos</Th>
+                  <Th className="text-right">Custo real</Th>
                   <Th className="text-right">Líquido</Th>
                 </Tr>
               </THead>
@@ -209,6 +222,8 @@ export default function Folha() {
 }
 
 function LinhaFolha({ r }: { r: BaseFolha }) {
+  const encargos = r.bruto * ENCARGOS_PCT;
+  const custoReal = r.bruto + encargos;
   return (
     <Tr>
       <Td className="font-mono text-xs text-muted-foreground">{r.codigo}</Td>
@@ -217,8 +232,9 @@ function LinhaFolha({ r }: { r: BaseFolha }) {
       <Td className="text-muted-foreground">{r.departamento || "—"}</Td>
       <Td className="text-muted-foreground">{periodoLabel(r.periodo)}</Td>
       <Td className="text-right font-medium">{fmtBRL(r.bruto, { compact: true })}</Td>
-      <Td className="text-right text-muted-foreground">
-        {fmtBRL(r.descontos, { compact: true })}
+      <Td className="text-right text-warning">{fmtBRL(encargos, { compact: true })}</Td>
+      <Td className="text-right font-bold text-destructive">
+        {fmtBRL(custoReal, { compact: true })}
       </Td>
       <Td className="text-right font-medium">{fmtBRL(r.liquido, { compact: true })}</Td>
     </Tr>
