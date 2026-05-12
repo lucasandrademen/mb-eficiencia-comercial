@@ -12,9 +12,21 @@ import {
   ChevronsRight,
   Briefcase,
   Receipt,
+  BadgeDollarSign,
+  Handshake,
+  Package,
+  Truck,
+  Target,
 } from "lucide-react";
 
-const nav = [
+type NavItem = {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  end?: boolean;
+};
+
+const nav: NavItem[] = [
   { to: "/", label: "Resumo Executivo", icon: LayoutDashboard, end: true },
   { to: "/ranking", label: "Ranking", icon: Trophy },
   { to: "/faixas", label: "Faixas de Faturamento", icon: Layers },
@@ -22,7 +34,16 @@ const nav = [
   { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
   { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
   { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
+  { to: "/comissao", label: "Comissão", icon: BadgeDollarSign },
   { to: "/upload", label: "Importação", icon: Upload },
+];
+
+const preserNav: NavItem[] = [
+  { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
+  { to: "/preser/sku", label: "Análise por SKU", icon: Package },
+  { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
+  { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
+  { to: "/preser/importar", label: "Importar Extrato", icon: Upload },
 ];
 
 export function AppSidebar() {
@@ -52,6 +73,37 @@ export function AppSidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-2 py-1 overflow-y-auto">
         {nav.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              title={collapsed ? item.label : undefined}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                  collapsed ? "justify-center" : ""
+                } ${
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                }`
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </NavLink>
+          );
+        })}
+
+        {!collapsed && (
+          <div className="px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Remuneração Broker
+          </div>
+        )}
+        {collapsed && <div className="my-2 border-t border-sidebar-border" />}
+
+        {preserNav.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
