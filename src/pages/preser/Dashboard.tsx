@@ -428,11 +428,12 @@ export default function PreserDashboard() {
       </div>
 
       {/* Links para módulos analíticos */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {[
-          { to: "/preser/oportunidades", label: "Oportunidades", desc: "Quanto está perdendo por canal/meta" },
-          { to: "/preser/sku", label: "Análise por SKU", desc: "Mix por categoria e divisão" },
-          { to: "/preser/canais", label: "Canais & Drops", desc: "R$/drop e oportunidades" },
+          { to: "/preser/oportunidades", label: "Oportunidades", desc: "Quanto está perdendo" },
+          { to: "/preser/comparativo", label: "Comparativo Mensal", desc: "Mês atual vs anterior" },
+          { to: "/preser/sku", label: "Análise por SKU", desc: "Mix por categoria" },
+          { to: "/preser/canais", label: "Canais & Drops", desc: "R$/drop por canal" },
           { to: "/preser/metas", label: "Metas e Gaps", desc: "Atingimento por critério" },
         ].map((l) => (
           <Link

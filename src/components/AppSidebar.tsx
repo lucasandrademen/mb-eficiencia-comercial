@@ -17,6 +17,7 @@ import {
   Truck,
   Target,
   Zap,
+  GitCompare,
 } from "lucide-react";
 
 type NavItem = {
@@ -39,6 +40,7 @@ const nav: NavItem[] = [
 
 const preserNav: NavItem[] = [
   { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
+  { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
   { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
   { to: "/preser/sku", label: "Análise por SKU", icon: Package },
   { to: "/preser/canais", label: "Canais / Drops", icon: Truck },

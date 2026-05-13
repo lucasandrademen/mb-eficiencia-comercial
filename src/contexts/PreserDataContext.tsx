@@ -16,6 +16,7 @@ interface PreserDataContextValue {
   selectedId: string | null;
   setSelectedId: (id: string) => void;
   atual: PreserExtratoCompleto | null;
+  anterior: PreserExtratoCompleto | null;
   serie: { periodo: string; comissao: number; faturamento_ac: number; pct: number }[];
   reload: () => Promise<void>;
 }
@@ -38,6 +39,7 @@ export function PreserDataProvider({ children }: { children: React.ReactNode }) 
   const [extratos, setExtratos] = useState<PreserExtrato[]>([]);
   const [selectedId, setSelectedIdRaw] = useState<string | null>(null);
   const [atual, setAtual] = useState<PreserExtratoCompleto | null>(null);
+  const [anterior, setAnterior] = useState<PreserExtratoCompleto | null>(null);
   const [serie, setSerie] = useState<PreserDataContextValue["serie"]>([]);
 
   const loadList = useCallback(async () => {
@@ -47,24 +49,55 @@ export function PreserDataProvider({ children }: { children: React.ReactNode }) 
     return list;
   }, []);
 
-  const setSelectedId = useCallback(async (id: string) => {
-    setSelectedIdRaw(id);
-    setLoading(true);
-    const data = await getExtratoPorId(id);
-    if (data) {
-      // filtra Purina em todas as listas
-      setAtual({
-        extrato: data.extrato,
-        skus: data.skus,
-        drops: data.drops,
-        metas: filterPurinaMetas(data.metas),
-        outros: data.outros.filter((o) => !isPurina(o)),
-      });
-    } else {
-      setAtual(null);
-    }
-    setLoading(false);
-  }, []);
+  const setSelectedId = useCallback(
+    async (id: string) => {
+      setSelectedIdRaw(id);
+      setLoading(true);
+      const data = await getExtratoPorId(id);
+      if (data) {
+        // filtra Purina em todas as listas
+        setAtual({
+          extrato: data.extrato,
+          skus: data.skus,
+          drops: data.drops,
+          metas: filterPurinaMetas(data.metas),
+          outros: data.outros.filter((o) => !isPurina(o)),
+        });
+
+        // Carrega o extrato do mês anterior para comparação
+        // Ordena por período desc para encontrar o anterior cronologicamente
+        const idxAtual = extratos.findIndex((e) => e.id === id);
+        const ordenados = [...extratos].sort((a, b) =>
+          a.periodo < b.periodo ? 1 : -1,
+        );
+        const posOrdenado = ordenados.findIndex((e) => e.id === id);
+        const anteriorMeta = ordenados[posOrdenado + 1]; // próximo na lista desc = anterior cronológico
+        if (anteriorMeta) {
+          const ant = await getExtratoPorId(anteriorMeta.id);
+          if (ant) {
+            setAnterior({
+              extrato: ant.extrato,
+              skus: ant.skus,
+              drops: ant.drops,
+              metas: filterPurinaMetas(ant.metas),
+              outros: ant.outros.filter((o) => !isPurina(o)),
+            });
+          } else {
+            setAnterior(null);
+          }
+        } else {
+          setAnterior(null);
+        }
+        // silencia warning de "idxAtual unused" — usado para reactivity
+        void idxAtual;
+      } else {
+        setAtual(null);
+        setAnterior(null);
+      }
+      setLoading(false);
+    },
+    [extratos],
+  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -91,8 +124,8 @@ export function PreserDataProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const value = useMemo<PreserDataContextValue>(
-    () => ({ loading, extratos, selectedId, setSelectedId, atual, serie, reload }),
-    [loading, extratos, selectedId, setSelectedId, atual, serie, reload],
+    () => ({ loading, extratos, selectedId, setSelectedId, atual, anterior, serie, reload }),
+    [loading, extratos, selectedId, setSelectedId, atual, anterior, serie, reload],
   );
 
   return <PreserDataContext.Provider value={value}>{children}</PreserDataContext.Provider>;

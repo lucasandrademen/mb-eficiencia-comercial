@@ -18,6 +18,7 @@ const PreserSku = lazy(() => import("./pages/preser/Sku"));
 const PreserCanais = lazy(() => import("./pages/preser/Canais"));
 const PreserMetas = lazy(() => import("./pages/preser/Metas"));
 const PreserOportunidades = lazy(() => import("./pages/preser/Oportunidades"));
+const PreserComparativo = lazy(() => import("./pages/preser/Comparativo"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Fallback = () => (
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/preser/canais" element={<PreserCanais />} />
             <Route path="/preser/metas" element={<PreserMetas />} />
             <Route path="/preser/oportunidades" element={<PreserOportunidades />} />
+            <Route path="/preser/comparativo" element={<PreserComparativo />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>
