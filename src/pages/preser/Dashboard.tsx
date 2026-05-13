@@ -396,35 +396,44 @@ export default function PreserDashboard() {
         </div>
       )}
 
-      {/* ── KPIs ───────────────────────────────────────────────────── */}
+      {/* ── KPIs principais ──────────────────────────────────────── */}
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label="Receita Broker Total"
-          value={fmtBRL(e.valor_total_comissao, { compact: true })}
-          sub={fmtBRL(e.valor_total_comissao)}
-          icon={DollarSign}
-          accent="primary"
-          delta={variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined}
-        />
-        <KpiCard
-          label="% sobre Faturamento AC"
-          value={fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}
-          sub={`Faturamento: ${fmtBRL(e.faturamento_ac, { compact: true })}`}
-          icon={Percent}
+          label="Faturamento Nestlé (AC)"
+          value={fmtBRL(e.faturamento_ac, { compact: true })}
+          sub="Base de cálculo da comissão (Crit. 21)"
+          icon={Target}
           accent="accent"
         />
         <KpiCard
-          label="Valor Líquido (após impostos)"
+          label="Receita Bruta MB"
+          value={fmtBRL(e.valor_total_contabilizado ?? e.valor_total_comissao, {
+            compact: true,
+          })}
+          sub={`Comissão soma: ${fmtBRL(e.valor_total_comissao, { compact: true })}`}
+          icon={DollarSign}
+          accent="primary"
+          delta={
+            variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined
+          }
+        />
+        <KpiCard
+          label="Receita Líquida (no caixa)"
           value={fmtBRL((e.valor_total_contabilizado ?? 0) - impostos, { compact: true })}
-          sub={`Impostos retidos: ${fmtBRL(impostos, { compact: true })}`}
+          sub={`− Impostos: ${fmtBRL(impostos, { compact: true })}`}
           icon={TrendingUp}
           accent="success"
         />
         <KpiCard
-          label="Comissão por parcela"
-          value={fmtBRL(e.valor_total_comissao, { compact: true })}
-          sub="SKUs + Drops + Metas + Outros"
-          icon={Receipt}
+          label="% Efetiva s/ Faturamento"
+          value={fmtPct(
+            (e.faturamento_ac ?? 0) > 0
+              ? ((e.valor_total_contabilizado ?? 0) - impostos) / (e.faturamento_ac ?? 1)
+              : 0,
+            2,
+          )}
+          sub={`Bruto: ${fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}`}
+          icon={Percent}
           accent="destructive"
         />
       </div>
@@ -479,6 +488,90 @@ export default function PreserDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Detalhe dos Impostos Retidos ─────────────────────────── */}
+      <Card className="mb-5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-4 w-4 text-destructive" />
+            Impostos retidos pela Nestlé
+          </CardTitle>
+          <CardDescription>
+            Total de retenções na fonte:{" "}
+            <strong className="text-destructive">{fmtBRL(impostos)}</strong> sobre a comissão.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <ImpostoCard
+              nome="IRRF"
+              valor={e.irrf_retido ?? 0}
+              aliquota="1,5%"
+              base={e.valor_total_contabilizado ?? 0}
+              cor="hsl(0 72% 55%)"
+              descricao="Imposto de Renda Retido na Fonte"
+            />
+            <ImpostoCard
+              nome="PIS"
+              valor={e.pis_retido ?? 0}
+              aliquota="0,65%"
+              base={e.valor_total_contabilizado ?? 0}
+              cor="hsl(38 92% 50%)"
+              descricao="Programa Integração Social"
+            />
+            <ImpostoCard
+              nome="COFINS"
+              valor={e.cofins_retido ?? 0}
+              aliquota="3,0%"
+              base={e.valor_total_contabilizado ?? 0}
+              cor="hsl(271 60% 56%)"
+              descricao="Contribuição p/ Financiamento da Seguridade Social"
+            />
+            <ImpostoCard
+              nome="CSLL"
+              valor={e.csll_retido ?? 0}
+              aliquota="1,0%"
+              base={e.valor_total_contabilizado ?? 0}
+              cor="hsl(215 80% 48%)"
+              descricao="Contribuição Social sobre Lucro Líquido"
+            />
+          </div>
+
+          {/* Barra empilhada com proporção */}
+          <div className="mt-4">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Distribuição dos impostos
+            </p>
+            <div className="flex h-8 w-full overflow-hidden rounded-md border border-border">
+              {[
+                { label: "IRRF", v: e.irrf_retido ?? 0, c: "hsl(0 72% 55%)" },
+                { label: "PIS", v: e.pis_retido ?? 0, c: "hsl(38 92% 50%)" },
+                { label: "COFINS", v: e.cofins_retido ?? 0, c: "hsl(271 60% 56%)" },
+                { label: "CSLL", v: e.csll_retido ?? 0, c: "hsl(215 80% 48%)" },
+              ].map((d) => {
+                const pct = impostos > 0 ? (d.v / impostos) * 100 : 0;
+                if (pct === 0) return null;
+                return (
+                  <div
+                    key={d.label}
+                    className="flex items-center justify-center text-[10px] font-bold text-white"
+                    style={{ width: `${pct}%`, background: d.c }}
+                    title={`${d.label}: ${fmtBRL(d.v)} (${pct.toFixed(1)}%)`}
+                  >
+                    {pct > 8 ? `${d.label} ${pct.toFixed(0)}%` : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg bg-secondary/30 p-3 text-xs text-muted-foreground">
+            💡 Impostos incidem sobre a parcela de <strong>Garantia de Crédito</strong> e{" "}
+            <strong>Prestação de Serviços-Variável</strong>. A parcela Fixa (Armazenagem, RC-DC etc.)
+            é isenta neste caso. Alíquotas conforme legislação federal vigente.
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Heatmap BU × Tipo + What-If lado a lado ─────────────────── */}
       <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -958,6 +1051,52 @@ function KpiCard({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ImpostoCard({
+  nome,
+  valor,
+  aliquota,
+  base,
+  cor,
+  descricao,
+}: {
+  nome: string;
+  valor: number;
+  aliquota: string;
+  base: number;
+  cor: string;
+  descricao: string;
+}) {
+  const pctReal = base > 0 ? (valor / base) * 100 : 0;
+  return (
+    <div
+      className="rounded-xl border p-3 transition-all hover:shadow-card"
+      style={{
+        borderColor: `${cor}44`,
+        background: `linear-gradient(135deg, ${cor}10 0%, ${cor}03 100%)`,
+      }}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-sm font-bold" style={{ color: cor }}>
+          {nome}
+        </p>
+        <span className="rounded-md bg-card px-1.5 py-0.5 text-[10px] font-mono font-semibold text-muted-foreground">
+          {aliquota}
+        </span>
+      </div>
+      <p className="mt-2 text-2xl font-bold leading-tight" style={{ color: cor }}>
+        {fmtBRL(valor, { compact: true })}
+      </p>
+      <p className="text-[10px] text-muted-foreground">{fmtBRL(valor)}</p>
+      <p className="mt-1.5 text-[10px] text-muted-foreground/70">
+        Efetiva: {pctReal.toFixed(3)}%
+      </p>
+      <p className="mt-1.5 text-[10px] italic text-muted-foreground/60" title={descricao}>
+        {descricao}
+      </p>
     </div>
   );
 }

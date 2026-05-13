@@ -18,6 +18,8 @@ import {
   Target,
   Zap,
   GitCompare,
+  BarChart3,
+  BookOpen,
 } from "lucide-react";
 
 type NavItem = {
@@ -42,9 +44,11 @@ const preserNav: NavItem[] = [
   { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
   { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
   { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
+  { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
   { to: "/preser/sku", label: "Análise por SKU", icon: Package },
   { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
   { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
+  { to: "/preser/regras", label: "Regras PRESER", icon: BookOpen },
   { to: "/preser/importar", label: "Importar Extrato", icon: Upload },
 ];
 
