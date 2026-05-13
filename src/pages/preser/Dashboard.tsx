@@ -77,12 +77,12 @@ export default function PreserDashboard() {
     for (const m of atual.metas) {
       if (m.tipo === "Recomendador" && (m.efetivo_fiscal ?? 0) < 0.5 && (m.comissao ?? 0) === 0) {
         const potencial = (m.pct_meta ?? 0.005) * (m.efetivo_mes ?? 0);
-        if (potencial > 1000) {
+        if (potencial > 100) {
           const faltam = 0.5 - (m.efetivo_fiscal ?? 0);
           out.push({
             icon: Flame,
             titulo: `${m.bu}: subir ${(faltam * 100).toFixed(1)}pp no Recomendador`,
-            descricao: `Está em ${fmtPct(m.efetivo_fiscal ?? 0)} — gatilho de 50% zerou a comissão.`,
+            descricao: `Atual ${fmtPct(m.efetivo_fiscal ?? 0)} — gatilho de 50% zerou a comissão.`,
             acao: `Recuperar ${fmtPct(faltam)} ativa toda a comissão potencial.`,
             ganho_potencial: potencial,
             cor: C_BAD,
@@ -93,48 +93,67 @@ export default function PreserDashboard() {
       }
     }
 
-    // 2) Metas VBC abaixo da faixa "ideal"
+    // 2) Metas VBC OU Cobertura abaixo da meta (gap concreto)
     for (const m of atual.metas) {
-      if (m.tipo === "VBC" && (m.objetivo_meta ?? 0) > 0) {
+      if ((m.tipo === "VBC" || m.tipo === "Cobertura") && (m.objetivo_meta ?? 0) > 0) {
         const ef = m.efetivo_fiscal ?? 0;
         const meta = m.objetivo_meta ?? 0;
-        const ideal = m.objetivo_ideal ?? meta * 1.1;
-        if (ef >= meta && ef < ideal) {
-          const ganhoExtra = (m.pct_ideal ?? 0.0065) * (m.efetivo_mes ?? 0) - (m.comissao ?? 0);
-          if (ganhoExtra > 2000) {
-            const faltam = ideal - ef;
-            out.push({
-              icon: Sparkles,
-              titulo: `${m.bu}: vender mais ${fmtBRL(faltam, { compact: true })} em VBC`,
-              descricao: `Bateu a meta — falta pouco pra faixa "ideal" (1.3% extra).`,
-              acao: `Promover SKUs Estratégicos para fechar o gap.`,
-              ganho_potencial: ganhoExtra,
-              cor: C_PURPLE,
-              bg: "from-accent/15 to-accent/0",
-              link: "/preser/sku",
-            });
-          }
+        if (ef >= meta) continue; // já bateu
+        const ganhoExtra = (m.pct_ideal ?? 0.0065) * (m.efetivo_mes ?? 0) - (m.comissao ?? 0);
+        if (ganhoExtra > 1000) {
+          const faltam = meta - ef;
+          const unidade = m.tipo === "Cobertura" ? "clientes" : "R$";
+          out.push({
+            icon: Sparkles,
+            titulo: `${m.bu} (${m.tipo}): faltam ${m.tipo === "Cobertura" ? fmtNum(faltam) : fmtBRL(faltam, { compact: true })} ${unidade}`,
+            descricao: `Em ${fmtPct(ef / meta)} da meta — comissão na faixa mínima.`,
+            acao: `Bater meta sobe % e libera comissão extra.`,
+            ganho_potencial: ganhoExtra,
+            cor: C_PURPLE,
+            bg: "from-accent/15 to-accent/0",
+            link: "/preser/metas",
+          });
         }
       }
     }
 
-    // 3) Canais sem drops (oportunidade clara)
-    const dropMedio =
-      atual.drops.length > 0
-        ? atual.drops.reduce((s, d) => s + (d.qtd_drops ?? 0), 0) / atual.drops.length
-        : 0;
+    // 3) Canais com R$/drop = 0 mas drops > 0 (Farma B sem rate)
     for (const d of atual.drops) {
-      if ((d.qtd_drops ?? 0) === 0 && (d.rs_calculado ?? 0) > 0) {
-        const potencial = dropMedio * 0.3 * (d.rs_calculado ?? 0);
-        if (potencial > 1000) {
+      const qtd = d.qtd_drops ?? 0;
+      const rs = d.rs_por_drop ?? 0;
+      if (qtd > 0 && rs === 0) {
+        // Drops realizados mas sem remuneração — precisa investigar
+        out.push({
+          icon: AlertTriangle,
+          titulo: `${d.canal_nome}: ${fmtNum(qtd)} drops sem remuneração`,
+          descricao: `R$/drop = 0 mesmo com volume — verificar configuração.`,
+          acao: `Confirmar tabela de tarifas com a Nestlé.`,
+          ganho_potencial: qtd * 35.82, // assume taxa Farma C como referência
+          cor: C_WARN,
+          bg: "from-warning/15 to-warning/0",
+          link: "/preser/canais",
+        });
+      }
+    }
+
+    // 4) Canais com baixa qtd vs média (oportunidade de incremento)
+    const dropTotal = atual.drops.reduce((s, d) => s + (d.qtd_drops ?? 0), 0);
+    const dropMedio = atual.drops.length > 0 ? dropTotal / atual.drops.length : 0;
+    for (const d of atual.drops) {
+      const qtd = d.qtd_drops ?? 0;
+      const rs = d.rs_calculado ?? 0;
+      if (qtd > 0 && qtd < dropMedio * 0.3 && rs > 50) {
+        const incremento = Math.round(dropMedio * 0.3 - qtd);
+        const ganho = incremento * rs;
+        if (ganho > 5000) {
           out.push({
             icon: Zap,
-            titulo: `Ativar canal ${d.canal_nome}`,
-            descricao: `Canal sem drops em ${periodoLabel(atual.extrato.periodo.slice(0, 7))}.`,
-            acao: `${fmtNum(Math.round(dropMedio * 0.3))} drops mínimos = ${fmtBRL(potencial, { compact: true })}.`,
-            ganho_potencial: potencial,
-            cor: C_WARN,
-            bg: "from-warning/15 to-warning/0",
+            titulo: `Crescer ${incremento} drops em ${d.canal_nome}`,
+            descricao: `Hoje tem ${fmtNum(qtd)}, abaixo da média de ${fmtNum(Math.round(dropMedio))}.`,
+            acao: `R$ ${rs.toFixed(2)}/drop × ${incremento} = ${fmtBRL(ganho, { compact: true })}.`,
+            ganho_potencial: ganho,
+            cor: C_OK,
+            bg: "from-success/15 to-success/0",
             link: "/preser/canais",
           });
         }
@@ -145,8 +164,10 @@ export default function PreserDashboard() {
   }, [atual]);
 
   // ─── Funil de Receita ─────────────────────────────────────────────
-  // Faturamento AC fica de fora — é referência (milhões vs. milhares)
-  // e já aparece no KPI do topo.
+  // Lógica: o valor que vale é o "Valor total contabilizado" do PDF —
+  // esse É a receita oficial registrada pela Nestlé (4 categorias fiscais).
+  // valor_total_comissao é a soma das parcelas (pode ter pequenas diferenças
+  // por critérios não capturados pelo parser).
   const funil = useMemo(() => {
     if (!atual) return null;
     const e = atual.extrato;
@@ -156,13 +177,12 @@ export default function PreserDashboard() {
       (e.pis_retido ?? 0) +
       (e.cofins_retido ?? 0) +
       (e.csll_retido ?? 0);
-    const comBruta = e.valor_total_comissao ?? 0;
-    const liquido = contab - impostos; // contabilizado é o teto fiscal
+    const liquido = contab - impostos;
+    const pctImpostos = contab > 0 ? impostos / contab : 0;
     return [
-      { name: "Comissão Bruta", valor: comBruta, cor: C_PRIMARY },
-      { name: "Contabilizado", valor: contab, cor: C_PURPLE },
-      { name: "Impostos", valor: impostos, cor: C_BAD, isNegativo: true },
-      { name: "Líquido (caixa)", valor: liquido, cor: C_OK, isFinal: true },
+      { name: "Receita Bruta", valor: contab, cor: C_PRIMARY, hint: "Total contabilizado pela Nestlé" },
+      { name: "Impostos", valor: impostos, cor: C_BAD, isNegativo: true, hint: `${fmtPct(pctImpostos, 2)} do bruto` },
+      { name: "Líquido (caixa)", valor: liquido, cor: C_OK, isFinal: true, hint: "Cai na conta da MB" },
     ];
   }, [atual]);
 
@@ -383,19 +403,15 @@ export default function PreserDashboard() {
         />
         <KpiCard
           label="Valor Líquido (após impostos)"
-          value={fmtBRL((e.valor_total_comissao ?? 0) - impostos, { compact: true })}
-          sub={`Impostos: ${fmtBRL(impostos, { compact: true })}`}
+          value={fmtBRL((e.valor_total_contabilizado ?? 0) - impostos, { compact: true })}
+          sub={`Impostos retidos: ${fmtBRL(impostos, { compact: true })}`}
           icon={TrendingUp}
           accent="success"
         />
         <KpiCard
-          label="Contabilizado"
-          value={fmtBRL(e.valor_total_contabilizado, { compact: true })}
-          sub={
-            e.valor_total_comissao
-              ? `${fmtPct((e.valor_total_contabilizado ?? 0) / e.valor_total_comissao)} do bruto`
-              : undefined
-          }
+          label="Comissão por parcela"
+          value={fmtBRL(e.valor_total_comissao, { compact: true })}
+          sub="SKUs + Drops + Metas + Outros"
           icon={Receipt}
           accent="destructive"
         />
@@ -414,44 +430,39 @@ export default function PreserDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              {funil.map((d, i) => {
-                const pct = funil[0].valor > 0 ? d.valor / funil[0].valor : 0;
-                return (
-                  <div key={d.name} className="relative">
-                    <div
-                      className="rounded-2xl border p-4 shadow-card transition-all hover:shadow-elevated"
-                      style={{
-                        borderColor: `${d.cor}66`,
-                        background: `linear-gradient(135deg, ${d.cor}1a 0%, ${d.cor}05 100%)`,
-                      }}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {funil.map((d, i) => (
+                <div key={d.name} className="relative">
+                  <div
+                    className="rounded-2xl border p-4 shadow-card transition-all hover:shadow-elevated"
+                    style={{
+                      borderColor: `${d.cor}66`,
+                      background: `linear-gradient(135deg, ${d.cor}1a 0%, ${d.cor}05 100%)`,
+                    }}
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {i + 1}. {d.name}
+                    </p>
+                    <p
+                      className="mt-2 text-2xl font-bold leading-tight"
+                      style={{ color: d.cor }}
                     >
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {i + 1}. {d.name}
-                      </p>
-                      <p
-                        className="mt-2 text-2xl font-bold leading-tight"
-                        style={{ color: d.cor }}
-                      >
-                        {d.isNegativo ? "−" : ""}
-                        {fmtBRL(d.valor, { compact: true })}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">{fmtBRL(d.valor)}</p>
-                      {!d.isNegativo && i > 0 && (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-secondary/50 px-2 py-0.5 text-[10px] font-medium">
-                          {fmtPct(pct)} do bruto
-                        </div>
-                      )}
-                    </div>
-                    {/* seta */}
-                    {i < funil.length - 1 && (
-                      <div className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 h-6 w-6 items-center justify-center rounded-full bg-card border border-border shadow-card">
-                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                      </div>
+                      {d.isNegativo ? "−" : ""}
+                      {fmtBRL(d.valor, { compact: true })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{fmtBRL(d.valor)}</p>
+                    {d.hint && (
+                      <p className="mt-2 text-[11px] italic text-muted-foreground/80">{d.hint}</p>
                     )}
                   </div>
-                );
-              })}
+                  {/* seta entre cards */}
+                  {i < funil.length - 1 && (
+                    <div className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 h-6 w-6 items-center justify-center rounded-full bg-card border border-border shadow-card">
+                      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
