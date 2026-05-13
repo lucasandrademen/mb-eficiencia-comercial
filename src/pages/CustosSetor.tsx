@@ -55,9 +55,7 @@ type SortKey =
   | "departamento"
   | "qtd"
   | "custoTotal"
-  | "faturamento"
-  | "pctCustoSobreFatTotal"
-  | "pctCustoSobreFatDept";
+  | "pctCustoSobreFatTotal";
 
 type Dir = "asc" | "desc";
 
@@ -232,9 +230,7 @@ export default function CustosSetor() {
         case "departamento": av = a.departamento; bv = b.departamento; break;
         case "qtd": av = a.qtd; bv = b.qtd; break;
         case "custoTotal": av = a.custoTotal; bv = b.custoTotal; break;
-        case "faturamento": av = a.faturamento; bv = b.faturamento; break;
         case "pctCustoSobreFatTotal": av = a.pctCustoSobreFatTotal; bv = b.pctCustoSobreFatTotal; break;
-        case "pctCustoSobreFatDept": av = a.pctCustoSobreFatDept; bv = b.pctCustoSobreFatDept; break;
       }
       if (typeof av === "string") return dir === "asc" ? av.localeCompare(bv as string) : (bv as string).localeCompare(av);
       return dir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number);
@@ -548,9 +544,8 @@ export default function CustosSetor() {
         <CardHeader>
           <CardTitle>Análise por Departamento</CardTitle>
           <CardDescription>
-            <strong>% Total</strong> = custo do setor sobre faturamento total da empresa ·{" "}
-            <strong>% Setor</strong> = custo do setor sobre faturamento gerado pelo próprio setor
-            (aplicável a setores comerciais).
+            <strong>% Total</strong> = quanto cada setor pesa sobre o faturamento PRESER da
+            empresa.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -566,14 +561,8 @@ export default function CustosSetor() {
                 <Th className="cursor-pointer select-none text-right" onClick={() => onSort("custoTotal")}>
                   Custo Total <SortIcon k="custoTotal" />
                 </Th>
-                <Th className="cursor-pointer select-none text-right" onClick={() => onSort("faturamento")}>
-                  Faturamento Setor <SortIcon k="faturamento" />
-                </Th>
                 <Th className="cursor-pointer select-none text-right" onClick={() => onSort("pctCustoSobreFatTotal")}>
-                  % Total <SortIcon k="pctCustoSobreFatTotal" />
-                </Th>
-                <Th className="cursor-pointer select-none text-right" onClick={() => onSort("pctCustoSobreFatDept")}>
-                  % Setor <SortIcon k="pctCustoSobreFatDept" />
+                  % s/ Faturamento <SortIcon k="pctCustoSobreFatTotal" />
                 </Th>
               </Tr>
             </THead>
@@ -600,9 +589,6 @@ export default function CustosSetor() {
                   <Td className="text-right font-semibold">
                     {fmtBRL(d.custoTotal, { compact: true })}
                   </Td>
-                  <Td className="text-right text-muted-foreground">
-                    {d.faturamento > 0 ? fmtBRL(d.faturamento, { compact: true }) : "—"}
-                  </Td>
                   <Td className="text-right">
                     <span
                       className={cn(
@@ -617,24 +603,6 @@ export default function CustosSetor() {
                       {fmtPct(d.pctCustoSobreFatTotal, 2)}
                     </span>
                   </Td>
-                  <Td className="text-right">
-                    {d.faturamento > 0 ? (
-                      <span
-                        className={cn(
-                          "font-mono text-xs font-bold",
-                          d.pctCustoSobreFatDept < 0.5
-                            ? "text-success"
-                            : d.pctCustoSobreFatDept < 0.8
-                              ? "text-warning"
-                              : "text-destructive",
-                        )}
-                      >
-                        {fmtPct(d.pctCustoSobreFatDept, 1)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </Td>
                 </Tr>
               ))}
             </TBody>
@@ -644,7 +612,6 @@ export default function CustosSetor() {
             <div className="flex items-center gap-6 text-right text-xs">
               <span>{fmtNum(kpis.headcount)} pessoas</span>
               <span className="font-bold">{fmtBRL(kpis.custoTotal)}</span>
-              <span className="font-bold">{fmtBRL(faturamentoTotal)}</span>
               <span
                 className={cn(
                   "font-mono font-bold",
@@ -665,9 +632,8 @@ export default function CustosSetor() {
             <div>
               <CardTitle>Análise por Funcionário</CardTitle>
               <CardDescription>
-                <strong>% s/ Fat. Total</strong> = peso individual sobre o faturamento PRESER da
-                empresa · <strong>% s/ Próprio Fat.</strong> = só vendedores (custo dele ÷
-                faturamento gerado por ele).
+                <strong>% s/ Faturamento</strong> = peso individual sobre o faturamento PRESER da
+                empresa.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -712,9 +678,7 @@ export default function CustosSetor() {
                   <Th>Departamento</Th>
                   <Th className="text-right">Bruto</Th>
                   <Th className="text-right">Custo c/ encargos</Th>
-                  <Th className="text-right">Faturamento</Th>
-                  <Th className="text-right">% s/ Fat. Total</Th>
-                  <Th className="text-right">% s/ Próprio Fat.</Th>
+                  <Th className="text-right">% s/ Faturamento</Th>
                 </Tr>
               </THead>
               <TBody>
@@ -724,22 +688,12 @@ export default function CustosSetor() {
                   return (
                     <Tr key={`${f.periodo}|${f.codigo}|${i}`}>
                       <Td className="font-mono text-xs text-muted-foreground">{f.codigo}</Td>
-                      <Td className="font-medium">
-                        {f.nome}
-                        {f.eVendedor && (
-                          <Badge variant="success" className="ml-1.5 text-[10px]">
-                            vendedor
-                          </Badge>
-                        )}
-                      </Td>
+                      <Td className="font-medium">{f.nome}</Td>
                       <Td className="text-muted-foreground text-xs">{f.cargo || "—"}</Td>
                       <Td className="text-muted-foreground text-xs">{f.departamento || "—"}</Td>
                       <Td className="text-right">{fmtBRL(f.bruto, { compact: true })}</Td>
                       <Td className="text-right font-semibold text-destructive">
                         {fmtBRL(f.custoTotal, { compact: true })}
-                      </Td>
-                      <Td className="text-right text-muted-foreground">
-                        {f.faturamento > 0 ? fmtBRL(f.faturamento, { compact: true }) : "—"}
                       </Td>
                       <Td className="text-right">
                         {semPreser ? (
@@ -755,22 +709,6 @@ export default function CustosSetor() {
                           >
                             {fmtPct(pctSobreTotal, 3)}
                           </span>
-                        )}
-                      </Td>
-                      <Td className="text-right">
-                        {f.eVendedor ? (
-                          <span
-                            className={cn(
-                              "font-mono text-xs font-bold",
-                              f.pctCustoSobreFat < 0.1 ? "text-success" :
-                              f.pctCustoSobreFat < 0.3 ? "text-warning" :
-                              "text-destructive",
-                            )}
-                          >
-                            {fmtPct(f.pctCustoSobreFat, 1)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
                         )}
                       </Td>
                     </Tr>
