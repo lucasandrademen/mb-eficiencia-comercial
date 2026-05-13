@@ -144,34 +144,36 @@ export default function PreserDashboard() {
     return out.sort((a, b) => b.ganho_potencial - a.ganho_potencial).slice(0, 3);
   }, [atual]);
 
-  // ─── Funil de Receita (waterfall) ────────────────────────────────
+  // ─── Funil de Receita ─────────────────────────────────────────────
+  // Faturamento AC fica de fora — é referência (milhões vs. milhares)
+  // e já aparece no KPI do topo.
   const funil = useMemo(() => {
     if (!atual) return null;
     const e = atual.extrato;
-    const fatAC = e.faturamento_ac ?? 0;
-    const comBruta = e.valor_total_comissao ?? 0;
+    const contab = e.valor_total_contabilizado ?? 0;
     const impostos =
       (e.irrf_retido ?? 0) +
       (e.pis_retido ?? 0) +
       (e.cofins_retido ?? 0) +
       (e.csll_retido ?? 0);
-    const contab = e.valor_total_contabilizado ?? 0;
-    const liquido = comBruta - impostos;
+    const comBruta = e.valor_total_comissao ?? 0;
+    const liquido = contab - impostos; // contabilizado é o teto fiscal
     return [
-      { name: "Faturamento AC", valor: fatAC, cor: C_PRIMARY, isReferencia: true },
-      { name: "Comissão Bruta", valor: comBruta, cor: C_OK },
+      { name: "Comissão Bruta", valor: comBruta, cor: C_PRIMARY },
       { name: "Contabilizado", valor: contab, cor: C_PURPLE },
-      { name: "Impostos (−)", valor: -impostos, cor: C_BAD },
-      { name: "Líquido", valor: liquido, cor: C_OK, isFinal: true },
+      { name: "Impostos", valor: impostos, cor: C_BAD, isNegativo: true },
+      { name: "Líquido (caixa)", valor: liquido, cor: C_OK, isFinal: true },
     ];
   }, [atual]);
 
   // ─── Heatmap interativo BU × Tipo ─────────────────────────────────
+  // status = "OK" (verde) | "atencao" (amarelo) | "perdeu" (vermelho)
+  type CellStatus = "OK" | "atencao" | "perdeu" | "sem_dado";
   const heatmapData = useMemo(() => {
-    if (!atual) return { bus: [], tipos: [], cells: new Map<string, { pct: number; comissao: number; gap: number }>() };
+    if (!atual) return { bus: [], tipos: [], cells: new Map<string, { pct: number; comissao: number; gap: number; status: CellStatus }>() };
     const bus = Array.from(new Set(atual.metas.map((m) => m.bu ?? "—"))).filter((b) => b !== "—").sort();
     const tipos: Array<"VBC" | "Cobertura" | "Recomendador"> = ["VBC", "Cobertura", "Recomendador"];
-    const cells = new Map<string, { pct: number; comissao: number; gap: number }>();
+    const cells = new Map<string, { pct: number; comissao: number; gap: number; status: CellStatus }>();
     for (const bu of bus) {
       for (const tipo of tipos) {
         const metas = atual.metas.filter((m) => m.bu === bu && m.tipo === tipo);
@@ -179,12 +181,16 @@ export default function PreserDashboard() {
         let pct = 0;
         let comissao = 0;
         let gap = 0;
+        let zerouPorGatilho = false;
         for (const m of metas) {
           comissao += m.comissao ?? 0;
           if (tipo === "Recomendador") {
-            pct = Math.max(pct, (m.efetivo_fiscal ?? 0) * 2); // efetivo 0.5 = 100%
-            if ((m.efetivo_fiscal ?? 0) < 0.5)
+            const ef = m.efetivo_fiscal ?? 0;
+            pct = Math.max(pct, ef * 2); // efetivo 0.5 = 100%
+            if (ef < 0.5) {
               gap += (m.pct_meta ?? 0.005) * (m.efetivo_mes ?? 0) - (m.comissao ?? 0);
+              if ((m.comissao ?? 0) === 0) zerouPorGatilho = true;
+            }
           } else {
             const ef = m.efetivo_fiscal ?? 0;
             const meta = m.objetivo_meta ?? 0;
@@ -194,7 +200,20 @@ export default function PreserDashboard() {
             }
           }
         }
-        cells.set(`${bu}|${tipo}`, { pct, comissao, gap: Math.max(0, gap) });
+        gap = Math.max(0, gap);
+
+        // status definido por: comissão ganha + gap restante
+        let status: CellStatus;
+        if (tipo === "Recomendador" && zerouPorGatilho) {
+          status = "perdeu"; // não bateu gatilho 50% → zerou tudo
+        } else if (pct >= 1.0 && gap < 100) {
+          status = "OK"; // atingiu meta plena
+        } else if (pct >= 0.85) {
+          status = "atencao"; // perto da meta
+        } else {
+          status = "perdeu"; // bem abaixo
+        }
+        cells.set(`${bu}|${tipo}`, { pct, comissao, gap, status });
       }
     }
     return { bus, tipos, cells };
@@ -382,55 +401,57 @@ export default function PreserDashboard() {
         />
       </div>
 
-      {/* ── Funil de Receita ──────────────────────────────────────── */}
+      {/* ── Funil de Receita (cards visuais com setas) ────────────── */}
       {funil && (
         <Card className="mb-5">
           <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-primary" />
-                  Funil da receita
-                </CardTitle>
-                <CardDescription>
-                  Do faturamento total da Nestlé até o líquido que entra no caixa.
-                </CardDescription>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" />
+              Funil da receita: da comissão bruta até o caixa
+            </CardTitle>
+            <CardDescription>
+              Quanto realmente cai na conta após contabilização fiscal e impostos.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={funil.map((d) => ({ ...d, valorAbs: Math.abs(d.valor) }))}
-                  margin={{ top: 10, right: 24, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis
-                    tickFormatter={(v) => fmtBRL(v, { compact: true })}
-                    tick={{ fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    formatter={(v: number, _name, props) => [
-                      fmtBRL(props.payload.valor),
-                      props.payload.isReferencia ? "Faturamento ref." : "Comissão",
-                    ]}
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      fontSize: 12,
-                    }}
-                  />
-                  <Bar dataKey="valorAbs" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                    {funil.map((d, i) => (
-                      <Cell key={i} fill={d.cor} fillOpacity={d.isReferencia ? 0.3 : 1} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+              {funil.map((d, i) => {
+                const pct = funil[0].valor > 0 ? d.valor / funil[0].valor : 0;
+                return (
+                  <div key={d.name} className="relative">
+                    <div
+                      className="rounded-2xl border p-4 shadow-card transition-all hover:shadow-elevated"
+                      style={{
+                        borderColor: `${d.cor}66`,
+                        background: `linear-gradient(135deg, ${d.cor}1a 0%, ${d.cor}05 100%)`,
+                      }}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {i + 1}. {d.name}
+                      </p>
+                      <p
+                        className="mt-2 text-2xl font-bold leading-tight"
+                        style={{ color: d.cor }}
+                      >
+                        {d.isNegativo ? "−" : ""}
+                        {fmtBRL(d.valor, { compact: true })}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{fmtBRL(d.valor)}</p>
+                      {!d.isNegativo && i > 0 && (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-secondary/50 px-2 py-0.5 text-[10px] font-medium">
+                          {fmtPct(pct)} do bruto
+                        </div>
+                      )}
+                    </div>
+                    {/* seta */}
+                    {i < funil.length - 1 && (
+                      <div className="hidden sm:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 h-6 w-6 items-center justify-center rounded-full bg-card border border-border shadow-card">
+                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -486,14 +507,13 @@ export default function PreserDashboard() {
                                 </td>
                               );
                             }
+                            // Cor agora reflete o STATUS real (não só o pct)
                             const cor =
-                              cell.pct >= 1.0
+                              cell.status === "OK"
                                 ? C_OK
-                                : cell.pct >= 0.85
+                                : cell.status === "atencao"
                                   ? C_WARN
-                                  : cell.pct >= 0.6
-                                    ? "hsl(20 90% 55%)"
-                                    : C_BAD;
+                                  : C_BAD;
                             const hover = heatmapHover?.bu === bu && heatmapHover?.tipo === tipo;
                             return (
                               <td key={tipo} className="px-1 py-1">

@@ -335,7 +335,10 @@ const META_INFO: Record<
 };
 
 function parseMetas(sections: CriterioSection[]) {
-  const out: ParsedPreser["metas"] = [];
+  // Map por chave (codigo|bu|tipo) — duplicatas (ex: critério aparece na seção
+  // de cálculo E na seção textual de "Informações Adicionais") são merged
+  // preferindo a entrada com mais dados não-nulos.
+  const byKey = new Map<string, ParsedPreser["metas"][number]>();
 
   for (const sec of sections) {
     const info = META_INFO[sec.codigo];
@@ -381,7 +384,8 @@ function parseMetas(sections: CriterioSection[]) {
       }
     }
 
-    out.push({
+    const key = `${sec.codigo}|${info.bu}|${info.tipo}`;
+    const novo = {
       criterio_codigo: sec.codigo,
       criterio_nome: sec.nome.slice(0, 200),
       bu: info.bu,
@@ -396,9 +400,23 @@ function parseMetas(sections: CriterioSection[]) {
       efetivo_mes,
       pct_atingido,
       comissao,
-    });
+    };
+    const existente = byKey.get(key);
+    if (!existente) {
+      byKey.set(key, novo);
+    } else {
+      // Merge: prefere valores não-nulos da nova entrada
+      byKey.set(key, {
+        ...existente,
+        efetivo_fiscal: existente.efetivo_fiscal ?? novo.efetivo_fiscal,
+        efetivo_mes: existente.efetivo_mes ?? novo.efetivo_mes,
+        pct_atingido: existente.pct_atingido ?? novo.pct_atingido,
+        comissao: existente.comissao ?? novo.comissao,
+        objetivo_meta: existente.objetivo_meta ?? novo.objetivo_meta,
+      });
+    }
   }
-  return out;
+  return Array.from(byKey.values());
 }
 
 // ──────────────────────────────────────────────────────────────────────────
