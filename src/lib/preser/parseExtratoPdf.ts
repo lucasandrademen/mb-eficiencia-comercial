@@ -91,9 +91,20 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const allText = pages.flatMap((p) => p.lines).join("\n");
 
   // ── 2.1 Cabeçalho: período ─────────────────────────────────────────────
+  // "Apuração: YYYY/M" no PDF refere-se ao CICLO que FECHA dia 19 do mês M.
+  // O ciclo PRESER é "mês M-1 dia 20" até "mês M dia 19", então a atividade
+  // comercial é do mês M-1. Ex: Apuração 2026/4 = ciclo Mar/20 a Abr/19 =
+  // atividade de MARÇO. Salvamos como mês M-1.
   const mApur = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
-  const ano = mApur ? mApur[1] : "2026";
-  const mes = mApur ? mApur[2].padStart(2, "0") : "01";
+  let ano = mApur ? parseInt(mApur[1], 10) : 2026;
+  let mesNum = mApur ? parseInt(mApur[2], 10) : 1;
+  // Recua 1 mês (com virada de ano se preciso)
+  mesNum -= 1;
+  if (mesNum <= 0) {
+    mesNum = 12;
+    ano -= 1;
+  }
+  const mes = String(mesNum).padStart(2, "0");
   const periodo = `${ano}-${mes}-01`;
 
   // ── 2.2 Split por critério ─────────────────────────────────────────────
