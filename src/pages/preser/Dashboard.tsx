@@ -35,6 +35,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
 import { usePreserData } from "@/contexts/PreserDataContext";
+import {
+  MetaDrillModal,
+  ComparativoBanner,
+  SkuRecommendations,
+  EsforcoImpactoMatrix,
+} from "@/components/preser/DashboardEnhancements";
 import { PreserEmptyState } from "./PreserEmptyState";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +55,7 @@ export default function PreserDashboard() {
   const { loading, atual, anterior, extratos: historico, serie } = usePreserData();
   const [whatIfPct, setWhatIfPct] = useState<number>(0); // % de melhoria simulada
   const [heatmapHover, setHeatmapHover] = useState<{ bu: string; tipo: string } | null>(null);
+  const [drillCell, setDrillCell] = useState<{ bu: string; tipo: "VBC" | "Cobertura" | "Recomendador" } | null>(null);
 
   // ─── KPIs ──────────────────────────────────────────────────────────
   const variacao = useMemo(() => {
@@ -315,6 +322,9 @@ export default function PreserDashboard() {
         actions={<PreserPeriodoFilter />}
       />
 
+      {/* ── Banner comparativo (se há mês anterior) ─────────────── */}
+      {anterior && <ComparativoBanner atual={atual} anterior={anterior} />}
+
       {/* ── HERO: Quick Wins (3 maiores oportunidades) ────────────── */}
       {quickWins.length > 0 && (
         <div className="mb-6">
@@ -478,7 +488,7 @@ export default function PreserDashboard() {
               Atingimento por BU × Tipo
             </CardTitle>
             <CardDescription>
-              Verde = bateu meta. Vermelho = abaixo. Passe o mouse sobre uma célula.
+              Verde = bateu meta. Vermelho = abaixo. <strong>Clique numa célula</strong> para ver os critérios.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -531,6 +541,7 @@ export default function PreserDashboard() {
                                 <div
                                   onMouseEnter={() => setHeatmapHover({ bu, tipo })}
                                   onMouseLeave={() => setHeatmapHover(null)}
+                                  onClick={() => setDrillCell({ bu, tipo })}
                                   className={cn(
                                     "cursor-pointer rounded-lg p-3 text-center transition-all",
                                     hover ? "scale-105 shadow-elevated" : "",
@@ -659,6 +670,12 @@ export default function PreserDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Matriz Esforço × Impacto ─────────────────────────────── */}
+      <EsforcoImpactoMatrix metas={atual.metas} drops={[]} />
+
+      {/* ── Recomendações de SKUs pra fechar gaps ────────────────── */}
+      <SkuRecommendations skus={atual.skus} metas={atual.metas} />
 
       {/* ── Pareto 80/20 dos SKUs ─────────────────────────────────── */}
       {pareto && (
@@ -855,6 +872,17 @@ export default function PreserDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Modal de drill-down do heatmap ───────────────────────── */}
+      {drillCell && (
+        <MetaDrillModal
+          open={!!drillCell}
+          onClose={() => setDrillCell(null)}
+          bu={drillCell.bu}
+          tipo={drillCell.tipo}
+          metas={atual.metas}
+        />
+      )}
 
       {/* ── Links rápidos ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
