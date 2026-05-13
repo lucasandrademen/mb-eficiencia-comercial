@@ -27,6 +27,7 @@ import {
   Target,
   Flame,
   Lightbulb,
+  Layers,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
@@ -65,6 +66,42 @@ export default function PreserDashboard() {
     if (!a) return null;
     return (t - a) / a;
   }, [atual, anterior]);
+
+  // ─── Fontes de receita: de onde vem cada R$ da comissão ─────────
+  const fontesReceita = useMemo(() => {
+    if (!atual) return [];
+    const skus = atual.skus.reduce((s, r) => s + (r.comissao ?? 0), 0);
+    const drops = atual.drops.reduce((s, r) => s + (r.comissao ?? 0), 0);
+    const metas = atual.metas.reduce((s, r) => s + (r.comissao ?? 0), 0);
+
+    // Categoriza os "outros" em sub-fontes
+    let transporte = 0; // Armazenagem + Refrigerado + Entrega + Op Logística
+    let garantia = 0; // Garantia de Crédito
+    let visitas = 0; // Visitas Farma/PAC/Mercha
+    let seguros = 0; // RC-DC, Seguro Patrimonial
+    let outrosBonus = 0; // Ressarcimentos, bônus pontuais
+
+    for (const o of atual.outros) {
+      const cod = o.criterio_codigo ?? 0;
+      const com = o.comissao ?? 0;
+      if (cod === 22 || cod === 23 || cod === 24 || cod === 25) transporte += com;
+      else if (cod === 21) garantia += com;
+      else if (cod === 17 || cod === 19 || cod === 65 || cod === 94) visitas += com;
+      else if (cod === 98 || cod === 101 || cod === 108) seguros += com;
+      else outrosBonus += com;
+    }
+
+    return [
+      { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(215 80% 48%)", desc: "SKUs (Crit. 1)" },
+      { nome: "Drops", icone: "🚚", valor: drops, cor: "hsl(152 60% 42%)", desc: "Entregas por canal (Crit. 20)" },
+      { nome: "Bônus Meta", icone: "🎯", valor: metas, cor: "hsl(38 92% 50%)", desc: "VBC + Cobertura + Recomendador" },
+      { nome: "Transporte", icone: "🏭", valor: transporte, cor: "hsl(271 60% 56%)", desc: "Armazenagem + Refrigerado + Entrega" },
+      { nome: "Garantia Crédito", icone: "🛡️", valor: garantia, cor: "hsl(185 60% 42%)", desc: "0,6% s/ faturamento (Crit. 21)" },
+      { nome: "Visitas / Mercha", icone: "👣", valor: visitas, cor: "hsl(330 70% 50%)", desc: "Farma + PAC + Merchandising" },
+      { nome: "Seguros", icone: "🔒", valor: seguros, cor: "hsl(0 72% 55%)", desc: "RC-DC + Seguro Patrimonial" },
+      { nome: "Bônus Pontuais", icone: "💰", valor: outrosBonus, cor: "hsl(220 10% 50%)", desc: "Ressarcimentos, incentivos" },
+    ].filter((f) => f.valor !== 0);
+  }, [atual]);
 
   // ─── Quick Wins: as 3 maiores oportunidades acionáveis ───────────
   const quickWins = useMemo(() => {
@@ -370,7 +407,118 @@ export default function PreserDashboard() {
       {/* ── Banner comparativo (se há mês anterior) ─────────────── */}
       {anterior && <ComparativoBanner atual={atual} anterior={anterior} />}
 
-      {/* ── HERO: Quick Wins (3 maiores oportunidades) ────────────── */}
+      {/* ═══════ De onde vem a comissão (logo após o Hero) ═══════ */}
+      {fontesReceita.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-bold">De onde vem a comissão</h2>
+            <Badge variant="muted">
+              {fontesReceita.length} fonte(s) de receita
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {(() => {
+              const totalGeral = fontesReceita.reduce((s, f) => s + f.valor, 0);
+              return fontesReceita
+                .sort((a, b) => b.valor - a.valor)
+                .map((f) => {
+                  const pct = totalGeral > 0 ? f.valor / totalGeral : 0;
+                  return (
+                    <div
+                      key={f.nome}
+                      className="relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-card transition-all hover:shadow-elevated"
+                    >
+                      <div
+                        className="pointer-events-none absolute inset-0 bg-gradient-to-br opacity-60"
+                        style={{ background: `linear-gradient(135deg, ${f.cor}18 0%, ${f.cor}03 100%)` }}
+                      />
+                      <div className="relative">
+                        <div className="flex items-center justify-between">
+                          <span className="text-2xl">{f.icone}</span>
+                          <span
+                            className="rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold"
+                            style={{ background: `${f.cor}22`, color: f.cor }}
+                          >
+                            {fmtPct(pct, 1)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {f.nome}
+                        </p>
+                        <p
+                          className="mt-1 text-2xl font-extrabold leading-tight"
+                          style={{ color: f.cor }}
+                        >
+                          {fmtBRL(f.valor, { compact: true })}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                          {fmtBRL(f.valor)}
+                        </p>
+                        <p className="mt-2 text-[10px] italic text-muted-foreground/70 line-clamp-2">
+                          {f.desc}
+                        </p>
+                        {/* Mini barra de proporção */}
+                        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-secondary/40">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct * 100}%`, background: f.cor }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Métricas secundárias (Receita Bruta, Impostos, %s) ──── */}
+      <div className="mb-2 flex items-center gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Detalhamento da comissão
+        </p>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <KpiCard
+          label="Receita Bruta"
+          value={fmtBRL(e.valor_total_contabilizado ?? e.valor_total_comissao, { compact: true })}
+          sub={`Soma comissão: ${fmtBRL(e.valor_total_comissao, { compact: true })}`}
+          icon={Receipt}
+          accent="primary"
+          delta={variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined}
+        />
+        <KpiCard
+          label="Impostos Retidos"
+          value={fmtBRL(impostos, { compact: true })}
+          sub={`Carga: ${fmtPct(
+            (e.valor_total_contabilizado ?? 0) > 0
+              ? impostos / (e.valor_total_contabilizado ?? 1)
+              : 0,
+            2,
+          )}`}
+          icon={TrendingDown}
+          accent="destructive"
+        />
+        <KpiCard
+          label="% Bruta s/ Faturamento"
+          value={fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}
+          sub="Antes dos impostos"
+          icon={Percent}
+          accent="accent"
+        />
+        <KpiCard
+          label="Critérios Pagos"
+          value={`${atual.metas.filter((m) => (m.comissao ?? 0) > 0).length}/${atual.metas.length}`}
+          sub={`Metas com comissão > 0`}
+          icon={TrendingUp}
+          accent="success"
+        />
+      </div>
+
+      {/* ── Quick Wins (movido pra cá: oportunidades acionáveis) ──── */}
       {quickWins.length > 0 && (
         <div className="mb-6">
           <div className="mb-3 flex items-center justify-between">
@@ -438,50 +586,6 @@ export default function PreserDashboard() {
           </div>
         </div>
       )}
-
-      {/* ── Métricas secundárias (Receita Bruta, Impostos, %s) ──── */}
-      <div className="mb-2 flex items-center gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Detalhamento da comissão
-        </p>
-        <div className="h-px flex-1 bg-border" />
-      </div>
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiCard
-          label="Receita Bruta"
-          value={fmtBRL(e.valor_total_contabilizado ?? e.valor_total_comissao, { compact: true })}
-          sub={`Soma comissão: ${fmtBRL(e.valor_total_comissao, { compact: true })}`}
-          icon={Receipt}
-          accent="primary"
-          delta={variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined}
-        />
-        <KpiCard
-          label="Impostos Retidos"
-          value={fmtBRL(impostos, { compact: true })}
-          sub={`Carga: ${fmtPct(
-            (e.valor_total_contabilizado ?? 0) > 0
-              ? impostos / (e.valor_total_contabilizado ?? 1)
-              : 0,
-            2,
-          )}`}
-          icon={TrendingDown}
-          accent="destructive"
-        />
-        <KpiCard
-          label="% Bruta s/ Faturamento"
-          value={fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}
-          sub="Antes dos impostos"
-          icon={Percent}
-          accent="accent"
-        />
-        <KpiCard
-          label="Critérios Pagos"
-          value={`${atual.metas.filter((m) => (m.comissao ?? 0) > 0).length}/${atual.metas.length}`}
-          sub={`Metas com comissão > 0`}
-          icon={TrendingUp}
-          accent="success"
-        />
-      </div>
 
       {/* ── Funil de Receita (cards visuais com setas) ────────────── */}
       {funil && (
