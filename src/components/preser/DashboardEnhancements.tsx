@@ -9,7 +9,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from "recharts";
 import {
   ArrowDownRight,
@@ -549,16 +548,25 @@ export function EsforcoImpactoMatrix({
         <CardTitle className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
           Matriz Esforço × Impacto
+          <Badge variant="muted" className="ml-auto">{oportunidades.length} oportunidade(s)</Badge>
         </CardTitle>
         <CardDescription>
-          Priorize pelo quadrante: Quick Wins (canto inferior-direito) → muito ganho, pouco esforço.
+          Priorize pelo quadrante: Quick Wins (canto inferior-esquerdo) = baixo esforço + alto impacto.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-[360px]">
+        <div className="relative h-[360px]">
+          {/* Bandas dos quadrantes ao fundo */}
+          <div className="pointer-events-none absolute inset-0 grid grid-cols-2 grid-rows-2 gap-0 px-[70px] pt-[20px] pb-[60px]">
+            <div className="border-r border-b border-dashed border-border bg-success/[0.04]" />
+            <div className="border-b border-dashed border-border bg-primary/[0.04]" />
+            <div className="border-r border-dashed border-border bg-warning/[0.03]" />
+            <div className="bg-muted/[0.02]" />
+          </div>
+
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 70 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
               <XAxis
                 type="number"
                 dataKey="esforco"
@@ -575,21 +583,15 @@ export function EsforcoImpactoMatrix({
                 tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 width={70}
               />
-              <ZAxis type="number" range={[100, 600]} />
               <Tooltip
                 cursor={{ strokeDasharray: "3 3" }}
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  fontSize: 12,
-                }}
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
                   const d = payload[0].payload as OportunidadeMatriz;
                   return (
                     <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-elevated">
                       <p className="font-bold">{d.nome}</p>
-                      <p className="mt-1 text-muted-foreground">{d.categoria}</p>
+                      <p className="mt-0.5 text-muted-foreground">{d.categoria}</p>
                       <div className="mt-2 space-y-0.5">
                         <p>
                           <span className="text-muted-foreground">Esforço:</span>{" "}
@@ -606,19 +608,16 @@ export function EsforcoImpactoMatrix({
                   );
                 }}
               />
-              {/* Um Scatter por categoria pra ter cor distinta */}
-              {(["Quick Win", "Estratégico", "Manutenção", "Pouca Prioridade"] as const).map((cat) => {
-                const subset = oportunidades.filter((o) => o.categoria === cat);
-                if (subset.length === 0) return null;
-                return (
-                  <Scatter
-                    key={cat}
-                    name={cat}
-                    data={subset}
-                    fill={corCategoria(cat)}
-                  />
-                );
-              })}
+              <Scatter
+                name="Oportunidades"
+                data={oportunidades}
+                fill="hsl(215 80% 48%)"
+                shape="circle"
+              >
+                {oportunidades.map((entry, i) => (
+                  <Cell key={`cell-${i}`} fill={entry.cor} stroke={entry.cor} strokeWidth={2} />
+                ))}
+              </Scatter>
             </ScatterChart>
           </ResponsiveContainer>
         </div>
