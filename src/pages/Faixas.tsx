@@ -27,7 +27,9 @@ const FAIXA_COLORS: Record<FaixaFaturamento, string> = {
 };
 
 export default function Faixas() {
-  const { rows } = useData();
+  const { rows: rowsAll } = useData();
+  // Filtra supervisores: eles já agregam o faturamento dos vendedores
+  const rows = useMemo(() => rowsAll.filter((r) => !r.is_supervisor), [rowsAll]);
 
   const stats = useMemo(() => {
     return FAIXAS_ORDER.map((faixa) => {

@@ -57,7 +57,10 @@ export default function Resumo() {
   const rowsPorEscopo = useMemo(() => {
     if (escopo === "vendedores") return rows.filter((r) => !r.is_supervisor);
     if (escopo === "supervisores") return rows.filter((r) => r.is_supervisor);
-    return rows;
+    // "todos" = consolidado da empresa SEM dupla contagem:
+    // supervisores já agregam o faturamento dos vendedores deles,
+    // então somar tudo dobraria. Usamos apenas vendedores diretos.
+    return rows.filter((r) => !r.is_supervisor);
   }, [rows, escopo]);
 
   const rowsFiltradas = useMemo(() => {

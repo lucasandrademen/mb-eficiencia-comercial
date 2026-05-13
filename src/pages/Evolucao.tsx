@@ -43,9 +43,16 @@ export default function Evolucao() {
     return [...set].sort();
   }, [rowsAll, agrupamento]);
 
+  // Filtra supervisores para evitar dupla contagem
+  // (supervisor já agrega o faturamento dos vendedores dele)
+  const rowsSemSupervisor = useMemo(
+    () => rowsAll.filter((r) => !r.is_supervisor),
+    [rowsAll],
+  );
+
   const seriesTime = useMemo(() => {
     return periodos.map((p) => {
-      const sub = rowsAll.filter((r) => r.periodo === p);
+      const sub = rowsSemSupervisor.filter((r) => r.periodo === p);
       const m = computeTimeMetrics(sub);
       return {
         periodo: p,
@@ -59,12 +66,12 @@ export default function Evolucao() {
         municipios: Math.round(m.media_municipios * 10) / 10,
       };
     });
-  }, [rowsAll, periodos]);
+  }, [rowsSemSupervisor, periodos]);
 
   const seriesFiltrada = useMemo(() => {
     if (agrupamento === "time" || filtro === "__all__") return seriesTime;
     return periodos.map((p) => {
-      const sub = rowsAll.filter((r) => {
+      const sub = rowsSemSupervisor.filter((r) => {
         if (r.periodo !== p) return false;
         if (agrupamento === "vendedor") return r.vendedor_nome === filtro;
         if (agrupamento === "supervisor") return (r.supervisor || "—") === filtro;

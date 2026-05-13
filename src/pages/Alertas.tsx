@@ -19,7 +19,9 @@ interface Alerta {
 }
 
 export default function Alertas() {
-  const { rows, metrics } = useData();
+  const { rows: rowsAll, metrics } = useData();
+  // Filtra supervisores: alertas individuais são para vendedores diretos
+  const rows = useMemo(() => rowsAll.filter((r) => !r.is_supervisor), [rowsAll]);
 
   const alertas: Alerta[] = useMemo(() => {
     if (rows.length === 0) return [];
