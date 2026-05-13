@@ -177,10 +177,11 @@ export default function CustosSetor() {
     });
   }, [folhaFiltrada, faturamentoPorCodigoNome]);
 
-  // ─── Faturamento total — sempre do PRESER (broker Nestlé) ─────────
-  // Se não há PRESER no mês selecionado, mostra R$ 0 + alerta visível.
-  const faturamentoTotal = faturamentoPreser.total;
-  const semPreser = faturamentoTotal === 0;
+  // ─── Base de cálculo: comissão líquida recebida pela MB ───────────
+  // Não usamos mais o faturamento bruto (R$ 16,8 mi) porque ele NÃO
+  // entra na conta da empresa — o que de fato entra é a comissão (~R$ 2 mi).
+  const comissaoLiquida = faturamentoPreser.comissaoLiquida;
+  const semPreser = comissaoLiquida === 0;
 
   // ─── Agrupado por departamento ────────────────────────────────────
   const porDepartamento = useMemo(() => {
@@ -217,10 +218,10 @@ export default function CustosSetor() {
     }
     return [...map.values()].map((d) => ({
       ...d,
-      pctCustoSobreFatTotal: faturamentoTotal > 0 ? d.custoTotal / faturamentoTotal : 0,
+      pctCustoSobreFatTotal: comissaoLiquida > 0 ? d.custoTotal / comissaoLiquida : 0,
       pctCustoSobreFatDept: d.faturamento > 0 ? d.custoTotal / d.faturamento : 0,
     }));
-  }, [folhaEnriquecida, faturamentoTotal]);
+  }, [folhaEnriquecida, comissaoLiquida]);
 
   // ─── Tabela ordenada ──────────────────────────────────────────────
   const deptOrdenado = useMemo(() => {
@@ -259,9 +260,7 @@ export default function CustosSetor() {
     const custoEncargos = folhaEnriquecida.reduce((s, f) => s + f.encargos, 0);
     const custoTotal = folhaEnriquecida.reduce((s, f) => s + f.custoTotal, 0);
     const headcount = folhaEnriquecida.length;
-    const pctCustoFat = faturamentoTotal > 0 ? custoTotal / faturamentoTotal : 0;
     // Resultado Bruto = Comissão líquida recebida pela MB − Custo da folha
-    const comissaoLiquida = faturamentoPreser.comissaoLiquida;
     const resultadoBruto = comissaoLiquida - custoTotal;
     const pctCustoComissao = comissaoLiquida > 0 ? custoTotal / comissaoLiquida : 0;
     return {
@@ -269,12 +268,10 @@ export default function CustosSetor() {
       custoEncargos,
       custoTotal,
       headcount,
-      pctCustoFat,
       resultadoBruto,
-      comissaoLiquida,
       pctCustoComissao,
     };
-  }, [folhaEnriquecida, faturamentoTotal, faturamentoPreser]);
+  }, [folhaEnriquecida, comissaoLiquida]);
 
   const depts = useMemo(
     () => Array.from(new Set((folhaEnriquecida).map((f) => f.departamento || "—"))).sort(),
@@ -317,7 +314,7 @@ export default function CustosSetor() {
         title="Custos por Setor"
         subtitle={
           <>
-            Quanto cada setor custa sobre o faturamento{" "}
+            Quanto cada setor custa sobre a comissão recebida{" "}
             <strong>
               {periodosSelecionados.length === 0
                 ? `(Ano todo — soma de ${faturamentoPreser.extratosUsados.length} extrato(s) PRESER)`
@@ -325,8 +322,8 @@ export default function CustosSetor() {
             </strong>
             {" · "}
             <span className="text-xs">
-              Fonte:{" "}
-              <strong className="text-success">PRESER (broker Nestlé)</strong>
+              Base:{" "}
+              <strong className="text-success">Comissão líquida PRESER</strong>
             </span>
           </>
         }
@@ -381,16 +378,14 @@ export default function CustosSetor() {
       {/* ── HERO: 4 KPIs ─────────────────────────────────────────── */}
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Faturamento PRESER"
-          value={
-            semPreser ? "—" : fmtBRL(faturamentoTotal, { compact: true })
-          }
+          title="Comissão Recebida (líquida)"
+          value={semPreser ? "—" : fmtBRL(comissaoLiquida, { compact: true })}
           subtitle={
             semPreser
               ? "Sem extrato PRESER no(s) mês(es)"
               : periodosSelecionados.length === 0
-                ? `${fmtBRL(faturamentoTotal)} · soma de ${faturamentoPreser.extratosUsados.length} mês(es)`
-                : `${fmtBRL(faturamentoTotal)} · ${faturamentoPreser.extratosUsados.length} extrato(s)`
+                ? `${fmtBRL(comissaoLiquida)} · soma de ${faturamentoPreser.extratosUsados.length} mês(es) PRESER`
+                : `${fmtBRL(comissaoLiquida)} · após impostos`
           }
           icon={TrendingUp}
           variant={semPreser ? "warning" : "primary"}
@@ -484,9 +479,9 @@ export default function CustosSetor() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Percent className="h-4 w-4 text-warning" />
-              % Custo sobre Faturamento Total
+              % Custo sobre Comissão
             </CardTitle>
-            <CardDescription>Quanto cada setor pesa no resultado da empresa.</CardDescription>
+            <CardDescription>Quanto cada setor consome da comissão recebida.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[260px]">
@@ -523,9 +518,9 @@ export default function CustosSetor() {
                       <Cell
                         key={i}
                         fill={
-                          d.pctCustoSobreFatTotal < 0.05
+                          d.pctCustoSobreFatTotal < 0.15
                             ? "hsl(152 60% 42%)"
-                            : d.pctCustoSobreFatTotal < 0.10
+                            : d.pctCustoSobreFatTotal < 0.30
                               ? "hsl(38 92% 50%)"
                               : "hsl(0 72% 55%)"
                         }
@@ -544,8 +539,8 @@ export default function CustosSetor() {
         <CardHeader>
           <CardTitle>Análise por Departamento</CardTitle>
           <CardDescription>
-            <strong>% Total</strong> = quanto cada setor pesa sobre o faturamento PRESER da
-            empresa.
+            <strong>% s/ Comissão</strong> = quanto cada setor consome da comissão líquida
+            recebida da Nestlé.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -562,7 +557,7 @@ export default function CustosSetor() {
                   Custo Total <SortIcon k="custoTotal" />
                 </Th>
                 <Th className="cursor-pointer select-none text-right" onClick={() => onSort("pctCustoSobreFatTotal")}>
-                  % s/ Faturamento <SortIcon k="pctCustoSobreFatTotal" />
+                  % s/ Comissão <SortIcon k="pctCustoSobreFatTotal" />
                 </Th>
               </Tr>
             </THead>
@@ -593,9 +588,9 @@ export default function CustosSetor() {
                     <span
                       className={cn(
                         "font-mono text-xs font-bold",
-                        d.pctCustoSobreFatTotal < 0.05
+                        d.pctCustoSobreFatTotal < 0.15
                           ? "text-success"
-                          : d.pctCustoSobreFatTotal < 0.10
+                          : d.pctCustoSobreFatTotal < 0.30
                             ? "text-warning"
                             : "text-destructive",
                       )}
@@ -615,10 +610,10 @@ export default function CustosSetor() {
               <span
                 className={cn(
                   "font-mono font-bold",
-                  kpis.pctCustoFat < 0.15 ? "text-success" : kpis.pctCustoFat < 0.25 ? "text-warning" : "text-destructive",
+                  kpis.pctCustoComissao < 0.5 ? "text-success" : kpis.pctCustoComissao < 0.8 ? "text-warning" : "text-destructive",
                 )}
               >
-                {fmtPct(kpis.pctCustoFat, 2)}
+                {fmtPct(kpis.pctCustoComissao, 2)}
               </span>
             </div>
           </div>
@@ -632,8 +627,7 @@ export default function CustosSetor() {
             <div>
               <CardTitle>Análise por Funcionário</CardTitle>
               <CardDescription>
-                <strong>% s/ Faturamento</strong> = peso individual sobre o faturamento PRESER da
-                empresa.
+                <strong>% s/ Comissão</strong> = peso individual sobre a comissão líquida recebida.
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -678,13 +672,13 @@ export default function CustosSetor() {
                   <Th>Departamento</Th>
                   <Th className="text-right">Bruto</Th>
                   <Th className="text-right">Custo c/ encargos</Th>
-                  <Th className="text-right">% s/ Faturamento</Th>
+                  <Th className="text-right">% s/ Comissão</Th>
                 </Tr>
               </THead>
               <TBody>
                 {funcionariosFiltrados.map((f, i) => {
                   const pctSobreTotal =
-                    faturamentoTotal > 0 ? f.custoTotal / faturamentoTotal : 0;
+                    comissaoLiquida > 0 ? f.custoTotal / comissaoLiquida : 0;
                   return (
                     <Tr key={`${f.periodo}|${f.codigo}|${i}`}>
                       <Td className="font-mono text-xs text-muted-foreground">{f.codigo}</Td>
@@ -702,12 +696,12 @@ export default function CustosSetor() {
                           <span
                             className={cn(
                               "font-mono text-xs font-bold",
-                              pctSobreTotal < 0.001 ? "text-success" :
-                              pctSobreTotal < 0.005 ? "text-warning" :
+                              pctSobreTotal < 0.01 ? "text-success" :
+                              pctSobreTotal < 0.03 ? "text-warning" :
                               "text-destructive",
                             )}
                           >
-                            {fmtPct(pctSobreTotal, 3)}
+                            {fmtPct(pctSobreTotal, 2)}
                           </span>
                         )}
                       </Td>
