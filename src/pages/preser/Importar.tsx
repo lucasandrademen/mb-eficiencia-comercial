@@ -8,11 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
 import { supabaseConfigured } from "@/lib/preser/supabase";
-import {
-  callParseEdgeFunction,
-  savePreser,
-  type ParsedPreser,
-} from "@/lib/preser/importar";
+import { savePreser, type ParsedPreser } from "@/lib/preser/importar";
+import { parsePreserExtratoPdf } from "@/lib/preser/parseExtratoPdf";
 import { PreserEmptyState } from "./PreserEmptyState";
 
 type Step = "idle" | "parsing" | "preview" | "saving" | "done";
@@ -54,11 +51,8 @@ export default function PreserImportar() {
     setError(null);
     setStep("parsing");
 
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
     try {
-      const data = await callParseEdgeFunction(f, supabaseUrl, anonKey);
+      const data = await parsePreserExtratoPdf(f);
       setParsed(data);
       setPeriodo(data.extrato.periodo ?? "");
       setValorTotal(String(data.extrato.valor_total_comissao ?? ""));
@@ -140,7 +134,7 @@ export default function PreserImportar() {
     <>
       <PageHeader
         title="Importar extrato PRESER"
-        subtitle="Upload do PDF mensal enviado pela Nestlé. O parser (Claude AI) extrai os 11 grupos de critérios."
+        subtitle="Upload do PDF mensal enviado pela Nestlé. O parser local extrai os 11 grupos de critérios (sem API externa)."
       />
 
       {error && (
@@ -200,7 +194,7 @@ export default function PreserImportar() {
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <div>
-              <p className="font-medium">Processando com Claude AI…</p>
+              <p className="font-medium">Lendo PDF…</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {file?.name} • Extraindo SKUs, drops, metas e critérios
               </p>
