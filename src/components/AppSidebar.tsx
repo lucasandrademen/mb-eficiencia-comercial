@@ -37,9 +37,12 @@ const nav: NavItem[] = [
   { to: "/matriz", label: "Matriz de Performance", icon: Grid3x3 },
   { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
   { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
-  { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
-  { to: "/custos-setor", label: "Custos por Setor", icon: Building2 },
   { to: "/upload", label: "Importação", icon: Upload },
+];
+
+const custosNav: NavItem[] = [
+  { to: "/custos-setor", label: "Custos por Setor", icon: Building2 },
+  { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
 ];
 
 const preserNav: NavItem[] = [
@@ -81,6 +84,37 @@ export function AppSidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-2 py-1 overflow-y-auto">
         {nav.map((item) => {
+          const Icon = item.icon;
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              title={collapsed ? item.label : undefined}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                  collapsed ? "justify-center" : ""
+                } ${
+                  isActive
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                }`
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </NavLink>
+          );
+        })}
+
+        {!collapsed && (
+          <div className="px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Custos & Folha
+          </div>
+        )}
+        {collapsed && <div className="my-2 border-t border-sidebar-border" />}
+
+        {custosNav.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
