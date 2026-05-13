@@ -400,10 +400,10 @@ export default function CustosSetor() {
         <MetricCard
           title="% Custo / Comissão"
           value={
-            kpis.comissaoLiquida > 0 ? fmtPct(kpis.pctCustoComissao, 1) : "—"
+            comissaoLiquida > 0 ? fmtPct(kpis.pctCustoComissao, 1) : "—"
           }
           subtitle={
-            kpis.comissaoLiquida > 0
+            comissaoLiquida > 0
               ? `Folha consome ${fmtPct(kpis.pctCustoComissao, 0)} da comissão recebida`
               : "Sem PRESER no período"
           }
@@ -419,13 +419,13 @@ export default function CustosSetor() {
         <MetricCard
           title="Resultado Bruto"
           value={
-            kpis.comissaoLiquida > 0
+            comissaoLiquida > 0
               ? fmtBRL(kpis.resultadoBruto, { compact: true })
               : "—"
           }
           subtitle={
-            kpis.comissaoLiquida > 0
-              ? `Comissão ${fmtBRL(kpis.comissaoLiquida, { compact: true })} − Folha ${fmtBRL(kpis.custoTotal, { compact: true })}`
+            comissaoLiquida > 0
+              ? `Comissão ${fmtBRL(comissaoLiquida, { compact: true })} − Folha ${fmtBRL(kpis.custoTotal, { compact: true })}`
               : "Sem PRESER no período"
           }
           icon={Users}
