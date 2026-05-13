@@ -1,15 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import {
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Scatter,
-  ScatterChart,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+// (Recharts não é mais usado aqui — Matriz é CSS pura)
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -555,82 +546,7 @@ export function EsforcoImpactoMatrix({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="relative h-[360px]">
-          {/* Bandas dos quadrantes ao fundo */}
-          <div className="pointer-events-none absolute inset-0 grid grid-cols-2 grid-rows-2 gap-0 px-[70px] pt-[20px] pb-[60px]">
-            <div className="border-r border-b border-dashed border-border bg-success/[0.04]" />
-            <div className="border-b border-dashed border-border bg-primary/[0.04]" />
-            <div className="border-r border-dashed border-border bg-warning/[0.03]" />
-            <div className="bg-muted/[0.02]" />
-          </div>
-
-          <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 70 }}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-              <XAxis
-                type="number"
-                dataKey="esforco"
-                name="Esforço"
-                domain={[0, 6]}
-                ticks={[1, 2, 3, 4, 5]}
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-              />
-              <YAxis
-                type="number"
-                dataKey="impacto"
-                name="Impacto"
-                tickFormatter={(v) => fmtBRL(v, { compact: true })}
-                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                width={70}
-              />
-              <Tooltip
-                cursor={{ strokeDasharray: "3 3" }}
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
-                  const d = payload[0].payload as OportunidadeMatriz;
-                  return (
-                    <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-elevated">
-                      <p className="font-bold">{d.nome}</p>
-                      <p className="mt-0.5 text-muted-foreground">{d.categoria}</p>
-                      <div className="mt-2 space-y-0.5">
-                        <p>
-                          <span className="text-muted-foreground">Esforço:</span>{" "}
-                          <span className="font-semibold">{d.esforco}/5</span>
-                        </p>
-                        <p>
-                          <span className="text-muted-foreground">Impacto:</span>{" "}
-                          <span className="font-bold" style={{ color: d.cor }}>
-                            {fmtBRL(d.impacto)}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  );
-                }}
-              />
-              <Scatter
-                name="Oportunidades"
-                data={oportunidades}
-                fill="hsl(215 80% 48%)"
-                shape="circle"
-              >
-                {oportunidades.map((entry, i) => (
-                  <Cell key={`cell-${i}`} fill={entry.cor} stroke={entry.cor} strokeWidth={2} />
-                ))}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="-mt-2 mb-2 text-center text-[10px] text-muted-foreground">
-          Eixo X: Esforço (1=fácil → 5=difícil) · Eixo Y: Impacto em R$
-        </p>
-        {/* Legenda dos quadrantes */}
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 text-xs">
-          <QuadrantLegend label="🎯 Quick Win" desc="Fácil + alto impacto" cor="hsl(152 60% 42%)" />
-          <QuadrantLegend label="💎 Estratégico" desc="Difícil + alto impacto" cor="hsl(215 80% 48%)" />
-          <QuadrantLegend label="🔧 Manutenção" desc="Fácil + baixo impacto" cor="hsl(38 92% 50%)" />
-          <QuadrantLegend label="⏸️ Pouca prioridade" desc="Difícil + baixo impacto" cor="hsl(220 10% 50%)" />
-        </div>
+        <CssScatterMatrix oportunidades={oportunidades} />
       </CardContent>
     </Card>
   );
@@ -654,14 +570,131 @@ function corCategoria(c: OportunidadeMatriz["categoria"]): string {
   }
 }
 
-function QuadrantLegend({ label, desc, cor }: { label: string; desc: string; cor: string }) {
+/** Matriz 2x2 CSS-based — mais robusta que Scatter + visualmente clara */
+function CssScatterMatrix({ oportunidades }: { oportunidades: OportunidadeMatriz[] }) {
+  // Agrupa por (esforço, categoria) — esforço 1-2 = baixo, 3-5 = alto
+  type Quadrante = "Quick Win" | "Estratégico" | "Manutenção" | "Pouca Prioridade";
+  const grupos: Record<Quadrante, OportunidadeMatriz[]> = {
+    "Quick Win": [],
+    "Estratégico": [],
+    "Manutenção": [],
+    "Pouca Prioridade": [],
+  };
+  for (const o of oportunidades) {
+    grupos[o.categoria].push(o);
+  }
+
+  const maxImpacto = Math.max(1, ...oportunidades.map((o) => o.impacto));
+
+  // Quadrantes na ordem: linha superior (alto impacto), depois inferior
+  const layout: Array<{
+    cat: Quadrante;
+    titulo: string;
+    desc: string;
+    icone: string;
+    cor: string;
+    bgClasse: string;
+    borderClasse: string;
+  }> = [
+    {
+      cat: "Quick Win",
+      titulo: "Quick Wins",
+      desc: "Baixo esforço · Alto impacto",
+      icone: "🎯",
+      cor: "hsl(152 60% 42%)",
+      bgClasse: "bg-success/10",
+      borderClasse: "border-success/50",
+    },
+    {
+      cat: "Estratégico",
+      titulo: "Estratégicos",
+      desc: "Alto esforço · Alto impacto",
+      icone: "💎",
+      cor: "hsl(215 80% 48%)",
+      bgClasse: "bg-primary/10",
+      borderClasse: "border-primary/40",
+    },
+    {
+      cat: "Manutenção",
+      titulo: "Manutenção",
+      desc: "Baixo esforço · Baixo impacto",
+      icone: "🔧",
+      cor: "hsl(38 92% 50%)",
+      bgClasse: "bg-warning/10",
+      borderClasse: "border-warning/40",
+    },
+    {
+      cat: "Pouca Prioridade",
+      titulo: "Pouca Prioridade",
+      desc: "Alto esforço · Baixo impacto",
+      icone: "⏸️",
+      cor: "hsl(220 10% 50%)",
+      bgClasse: "bg-muted/30",
+      borderClasse: "border-muted-foreground/30",
+    },
+  ];
+
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 px-2.5 py-1.5">
-      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: cor }} />
-      <div className="min-w-0">
-        <p className="font-semibold leading-tight">{label}</p>
-        <p className="text-[10px] text-muted-foreground leading-tight">{desc}</p>
-      </div>
+    <div className="grid grid-cols-2 gap-3">
+      {layout.map((q) => (
+        <div
+          key={q.cat}
+          className={cn(
+            "rounded-xl border-2 p-4",
+            q.bgClasse,
+            q.borderClasse,
+          )}
+        >
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-bold flex items-center gap-1.5">
+                <span>{q.icone}</span> {q.titulo}
+              </p>
+              <p className="text-[11px] text-muted-foreground">{q.desc}</p>
+            </div>
+            <Badge variant="muted" className="shrink-0">
+              {grupos[q.cat].length}
+            </Badge>
+          </div>
+
+          {grupos[q.cat].length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">— nenhuma —</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {grupos[q.cat]
+                .sort((a, b) => b.impacto - a.impacto)
+                .map((o, i) => {
+                  const barWidth = Math.max(8, (o.impacto / maxImpacto) * 100);
+                  return (
+                    <li key={i} className="group relative">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-medium" title={o.nome}>
+                          {o.nome}
+                        </span>
+                        <span className="shrink-0 font-bold" style={{ color: q.cor }}>
+                          {fmtBRL(o.impacto, { compact: true })}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 h-1.5 w-full rounded-full bg-card overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${barWidth}%`,
+                            background: q.cor,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Esforço: {o.esforco}/5</span>
+                      </div>
+                    </li>
+                  );
+                })}
+            </ul>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
+
