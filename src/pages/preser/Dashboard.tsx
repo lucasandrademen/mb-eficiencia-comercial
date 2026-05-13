@@ -324,6 +324,49 @@ export default function PreserDashboard() {
         actions={<PreserPeriodoFilter />}
       />
 
+      {/* ═══════ HERO PRINCIPAL — Os 3 números que importam ═══════ */}
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <HeroKpi
+          label="Valor Faturado"
+          subLabel="Total vendido para a Nestlé (AC)"
+          value={fmtBRL(e.faturamento_ac, { compact: true })}
+          valueFull={fmtBRL(e.faturamento_ac)}
+          icon={Target}
+          gradient="from-primary/25 via-primary/8 to-card"
+          ring="ring-primary/30"
+          accent="text-primary"
+        />
+        <HeroKpi
+          label="Comissão Líquida"
+          subLabel="O que cai na conta da MB"
+          value={fmtBRL((e.valor_total_contabilizado ?? 0) - impostos, { compact: true })}
+          valueFull={fmtBRL((e.valor_total_contabilizado ?? 0) - impostos)}
+          icon={DollarSign}
+          gradient="from-success/30 via-success/8 to-card"
+          ring="ring-success/30"
+          accent="text-success"
+        />
+        <HeroKpi
+          label="Ganho s/ Venda"
+          subLabel="Líquido ÷ Faturado"
+          value={fmtPct(
+            (e.faturamento_ac ?? 0) > 0
+              ? ((e.valor_total_contabilizado ?? 0) - impostos) / (e.faturamento_ac ?? 1)
+              : 0,
+            2,
+          )}
+          valueFull={`A cada R$ 100 vendidos, MB ganha ${fmtBRL(
+            (e.faturamento_ac ?? 0) > 0
+              ? (((e.valor_total_contabilizado ?? 0) - impostos) / (e.faturamento_ac ?? 1)) * 100
+              : 0,
+          )}`}
+          icon={Percent}
+          gradient="from-warning/25 via-warning/8 to-card"
+          ring="ring-warning/30"
+          accent="text-warning"
+        />
+      </div>
+
       {/* ── Banner comparativo (se há mês anterior) ─────────────── */}
       {anterior && <ComparativoBanner atual={atual} anterior={anterior} />}
 
@@ -396,45 +439,47 @@ export default function PreserDashboard() {
         </div>
       )}
 
-      {/* ── KPIs principais ──────────────────────────────────────── */}
-      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {/* ── Métricas secundárias (Receita Bruta, Impostos, %s) ──── */}
+      <div className="mb-2 flex items-center gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Detalhamento da comissão
+        </p>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
-          label="Faturamento Nestlé (AC)"
-          value={fmtBRL(e.faturamento_ac, { compact: true })}
-          sub="Base de cálculo da comissão (Crit. 21)"
-          icon={Target}
+          label="Receita Bruta"
+          value={fmtBRL(e.valor_total_contabilizado ?? e.valor_total_comissao, { compact: true })}
+          sub={`Soma comissão: ${fmtBRL(e.valor_total_comissao, { compact: true })}`}
+          icon={Receipt}
+          accent="primary"
+          delta={variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined}
+        />
+        <KpiCard
+          label="Impostos Retidos"
+          value={fmtBRL(impostos, { compact: true })}
+          sub={`Carga: ${fmtPct(
+            (e.valor_total_contabilizado ?? 0) > 0
+              ? impostos / (e.valor_total_contabilizado ?? 1)
+              : 0,
+            2,
+          )}`}
+          icon={TrendingDown}
+          accent="destructive"
+        />
+        <KpiCard
+          label="% Bruta s/ Faturamento"
+          value={fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}
+          sub="Antes dos impostos"
+          icon={Percent}
           accent="accent"
         />
         <KpiCard
-          label="Receita Bruta MB"
-          value={fmtBRL(e.valor_total_contabilizado ?? e.valor_total_comissao, {
-            compact: true,
-          })}
-          sub={`Comissão soma: ${fmtBRL(e.valor_total_comissao, { compact: true })}`}
-          icon={DollarSign}
-          accent="primary"
-          delta={
-            variacao != null ? { pct: variacao, label: "vs mês anterior" } : undefined
-          }
-        />
-        <KpiCard
-          label="Receita Líquida (no caixa)"
-          value={fmtBRL((e.valor_total_contabilizado ?? 0) - impostos, { compact: true })}
-          sub={`− Impostos: ${fmtBRL(impostos, { compact: true })}`}
+          label="Critérios Pagos"
+          value={`${atual.metas.filter((m) => (m.comissao ?? 0) > 0).length}/${atual.metas.length}`}
+          sub={`Metas com comissão > 0`}
           icon={TrendingUp}
           accent="success"
-        />
-        <KpiCard
-          label="% Efetiva s/ Faturamento"
-          value={fmtPct(
-            (e.faturamento_ac ?? 0) > 0
-              ? ((e.valor_total_contabilizado ?? 0) - impostos) / (e.faturamento_ac ?? 1)
-              : 0,
-            2,
-          )}
-          sub={`Bruto: ${fmtPct(e.pct_remuneracao_sobre_fat ?? 0, 3)}`}
-          icon={Percent}
-          accent="destructive"
         />
       </div>
 
@@ -1050,6 +1095,57 @@ function KpiCard({
             {fmtPct(delta.pct)} {delta.label}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function HeroKpi({
+  label,
+  subLabel,
+  value,
+  valueFull,
+  icon: Icon,
+  gradient,
+  ring,
+  accent,
+}: {
+  label: string;
+  subLabel: string;
+  value: string;
+  valueFull: string;
+  icon: React.ComponentType<{ className?: string }>;
+  gradient: string;
+  ring: string;
+  accent: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-elevated ring-1",
+        ring,
+      )}
+    >
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 bg-gradient-to-br",
+          gradient,
+        )}
+      />
+      <div className="relative">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </p>
+          <Icon className={cn("h-5 w-5", accent)} />
+        </div>
+        <p className={cn("mt-4 text-5xl font-extrabold leading-none tracking-tight", accent)}>
+          {value}
+        </p>
+        <p className="mt-3 text-xs text-muted-foreground" title={valueFull}>
+          {subLabel}
+        </p>
+        <p className="mt-1 text-[11px] font-medium text-muted-foreground/80">{valueFull}</p>
       </div>
     </div>
   );
