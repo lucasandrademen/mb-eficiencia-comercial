@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -34,6 +34,8 @@ import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
 import { ENCARGOS_PCT } from "@/lib/calculations";
+import { listExtratos } from "@/lib/preser/api";
+import type { PreserExtrato } from "@/lib/preser/types";
 import { cn } from "@/lib/utils";
 
 const CORES_DEPT = [
@@ -66,11 +68,43 @@ export default function CustosSetor() {
   const [sortKey, setSortKey] = useState<SortKey>("custoTotal");
   const [dir, setDir] = useState<Dir>("desc");
 
+  // ─── Carrega extratos PRESER (faturamento real do broker) ─────────
+  const [extratosPreser, setExtratosPreser] = useState<PreserExtrato[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        setExtratosPreser(await listExtratos());
+      } catch {
+        setExtratosPreser([]);
+      }
+    })();
+  }, []);
+
   // ─── Filtra folha pelos períodos selecionados ─────────────────────
   const folhaFiltrada = useMemo(() => {
     if (periodosSelecionados.length === 0) return dataset.folha ?? [];
     return (dataset.folha ?? []).filter((f) => periodosSelecionados.includes(f.periodo));
   }, [dataset.folha, periodosSelecionados]);
+
+  // ─── Faturamento PRESER (do broker) filtrado pelos períodos ───────
+  // Períodos da folha: "YYYY-MM" · Períodos PRESER: "YYYY-MM-01"
+  // Cruza por YYYY-MM
+  const faturamentoPreser = useMemo(() => {
+    const periodosFolha =
+      periodosSelecionados.length > 0
+        ? new Set(periodosSelecionados)
+        : new Set((dataset.folha ?? []).map((f) => f.periodo));
+    let total = 0;
+    const extratosUsados: PreserExtrato[] = [];
+    for (const ex of extratosPreser) {
+      const ymPreser = ex.periodo.slice(0, 7); // "2026-04"
+      if (periodosFolha.has(ymPreser)) {
+        total += ex.faturamento_ac ?? 0;
+        extratosUsados.push(ex);
+      }
+    }
+    return { total, extratosUsados };
+  }, [extratosPreser, periodosSelecionados, dataset.folha]);
 
   // ─── Mapa de faturamento por NOME (cruza folha → vendedor) ────────
   const faturamentoPorCodigoNome = useMemo(() => {
@@ -104,11 +138,18 @@ export default function CustosSetor() {
     });
   }, [folhaFiltrada, faturamentoPorCodigoNome]);
 
-  // ─── Faturamento total (independente de match) ────────────────────
-  const faturamentoTotal = useMemo(
+  // ─── Faturamento total — vem do PRESER (broker Nestlé) ────────────
+  // Fallback: usa soma dos vendedores se PRESER não tem extrato do mês
+  const faturamentoVendedores = useMemo(
     () => rows.reduce((s, r) => s + r.faturamento, 0),
     [rows],
   );
+  const faturamentoTotal = faturamentoPreser.total > 0
+    ? faturamentoPreser.total
+    : faturamentoVendedores;
+  const fonteFaturamento: "preser" | "vendedores" = faturamentoPreser.total > 0
+    ? "preser"
+    : "vendedores";
 
   // ─── Agrupado por departamento ────────────────────────────────────
   const porDepartamento = useMemo(() => {
@@ -233,20 +274,46 @@ export default function CustosSetor() {
     <>
       <PageHeader
         title="Custos por Setor"
-        subtitle={`Quanto cada setor custa sobre o faturamento ${
-          periodosSelecionados.length === 0
-            ? `(${new Set(folhaEnriquecida.map((f) => f.periodo)).size} mês(es))`
-            : periodosSelecionados.map((p) => periodoLabel(p)).join(" • ")
-        }`}
+        subtitle={
+          <>
+            Quanto cada setor custa sobre o faturamento{" "}
+            <strong>
+              {periodosSelecionados.length === 0
+                ? `(${new Set(folhaEnriquecida.map((f) => f.periodo)).size} mês(es))`
+                : periodosSelecionados.map((p) => periodoLabel(p)).join(" • ")}
+            </strong>
+            {" · "}
+            <span className="text-xs">
+              Fonte do faturamento:{" "}
+              <strong
+                className={
+                  fonteFaturamento === "preser" ? "text-success" : "text-warning"
+                }
+              >
+                {fonteFaturamento === "preser"
+                  ? "PRESER (broker Nestlé)"
+                  : "Vendedores (sem PRESER do mês)"}
+              </strong>
+            </span>
+          </>
+        }
         actions={<PeriodoFilter />}
       />
 
       {/* ── HERO: 4 KPIs ─────────────────────────────────────────── */}
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Faturamento Total"
+          title={
+            fonteFaturamento === "preser"
+              ? "Faturamento (PRESER Broker)"
+              : "Faturamento (Vendedores)"
+          }
           value={fmtBRL(faturamentoTotal, { compact: true })}
-          subtitle={fmtBRL(faturamentoTotal)}
+          subtitle={
+            fonteFaturamento === "preser"
+              ? `${fmtBRL(faturamentoTotal)} · ${faturamentoPreser.extratosUsados.length} extrato(s) PRESER`
+              : `${fmtBRL(faturamentoTotal)} · sem extrato PRESER (usando carteira)`
+          }
           icon={TrendingUp}
           variant="primary"
         />
