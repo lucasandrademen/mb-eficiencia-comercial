@@ -95,26 +95,35 @@ export default function CustosSetor() {
   // - Mensal (1+ períodos) = só PRESER dos meses selecionados
   const faturamentoPreser = useMemo(() => {
     let total = 0;
+    let comissaoBruta = 0; // valor_total_contabilizado (R$ ~2,1 mi)
+    let comissaoLiquida = 0; // contabilizado - impostos
     const extratosUsados: PreserExtrato[] = [];
+
+    const acumular = (ex: PreserExtrato) => {
+      total += ex.faturamento_ac ?? 0;
+      const contab = ex.valor_total_contabilizado ?? ex.valor_total_comissao ?? 0;
+      const impostos =
+        (ex.irrf_retido ?? 0) +
+        (ex.pis_retido ?? 0) +
+        (ex.cofins_retido ?? 0) +
+        (ex.csll_retido ?? 0);
+      comissaoBruta += contab;
+      comissaoLiquida += contab - impostos;
+      extratosUsados.push(ex);
+    };
 
     if (periodosSelecionados.length === 0) {
       // Ano todo: soma TODOS os PRESER imputados
-      for (const ex of extratosPreser) {
-        total += ex.faturamento_ac ?? 0;
-        extratosUsados.push(ex);
-      }
+      for (const ex of extratosPreser) acumular(ex);
     } else {
       // Mensal: só PRESER dos meses selecionados
       const set = new Set(periodosSelecionados);
       for (const ex of extratosPreser) {
         const ymPreser = ex.periodo.slice(0, 7);
-        if (set.has(ymPreser)) {
-          total += ex.faturamento_ac ?? 0;
-          extratosUsados.push(ex);
-        }
+        if (set.has(ymPreser)) acumular(ex);
       }
     }
-    return { total, extratosUsados };
+    return { total, comissaoBruta, comissaoLiquida, extratosUsados };
   }, [extratosPreser, periodosSelecionados]);
 
   // Lista de meses PRESER importados (pra mostrar disponibilidade)
@@ -255,9 +264,21 @@ export default function CustosSetor() {
     const custoTotal = folhaEnriquecida.reduce((s, f) => s + f.custoTotal, 0);
     const headcount = folhaEnriquecida.length;
     const pctCustoFat = faturamentoTotal > 0 ? custoTotal / faturamentoTotal : 0;
-    const resultadoBruto = faturamentoTotal - custoTotal;
-    return { custoBruto, custoEncargos, custoTotal, headcount, pctCustoFat, resultadoBruto };
-  }, [folhaEnriquecida, faturamentoTotal]);
+    // Resultado Bruto = Comissão líquida recebida pela MB − Custo da folha
+    const comissaoLiquida = faturamentoPreser.comissaoLiquida;
+    const resultadoBruto = comissaoLiquida - custoTotal;
+    const pctCustoComissao = comissaoLiquida > 0 ? custoTotal / comissaoLiquida : 0;
+    return {
+      custoBruto,
+      custoEncargos,
+      custoTotal,
+      headcount,
+      pctCustoFat,
+      resultadoBruto,
+      comissaoLiquida,
+      pctCustoComissao,
+    };
+  }, [folhaEnriquecida, faturamentoTotal, faturamentoPreser]);
 
   const depts = useMemo(
     () => Array.from(new Set((folhaEnriquecida).map((f) => f.departamento || "—"))).sort(),
@@ -386,24 +407,36 @@ export default function CustosSetor() {
           variant="destructive"
         />
         <MetricCard
-          title="% Custo / Faturamento"
-          value={fmtPct(kpis.pctCustoFat, 2)}
+          title="% Custo / Comissão"
+          value={
+            kpis.comissaoLiquida > 0 ? fmtPct(kpis.pctCustoComissao, 1) : "—"
+          }
           subtitle={
-            kpis.pctCustoFat < 0.15
-              ? "Saudável (< 15%)"
-              : kpis.pctCustoFat < 0.25
-                ? "Médio (15-25%)"
-                : "Alto (> 25%)"
+            kpis.comissaoLiquida > 0
+              ? `Folha consome ${fmtPct(kpis.pctCustoComissao, 0)} da comissão recebida`
+              : "Sem PRESER no período"
           }
           icon={Percent}
           variant={
-            kpis.pctCustoFat < 0.15 ? "success" : kpis.pctCustoFat < 0.25 ? "warning" : "destructive"
+            kpis.pctCustoComissao < 0.5
+              ? "success"
+              : kpis.pctCustoComissao < 0.8
+                ? "warning"
+                : "destructive"
           }
         />
         <MetricCard
           title="Resultado Bruto"
-          value={fmtBRL(kpis.resultadoBruto, { compact: true })}
-          subtitle={`${fmtNum(kpis.headcount)} colaboradores`}
+          value={
+            kpis.comissaoLiquida > 0
+              ? fmtBRL(kpis.resultadoBruto, { compact: true })
+              : "—"
+          }
+          subtitle={
+            kpis.comissaoLiquida > 0
+              ? `Comissão ${fmtBRL(kpis.comissaoLiquida, { compact: true })} − Folha ${fmtBRL(kpis.custoTotal, { compact: true })}`
+              : "Sem PRESER no período"
+          }
           icon={Users}
           variant={kpis.resultadoBruto > 0 ? "success" : "destructive"}
         />
