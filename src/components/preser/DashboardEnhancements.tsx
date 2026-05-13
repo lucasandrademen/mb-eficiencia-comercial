@@ -63,40 +63,41 @@ export function MetaDrillModal({ open, onClose, bu, tipo, metas }: DrillDownProp
           const meta = m.objetivo_meta ?? 0;
           const com = m.comissao ?? 0;
           const efMes = m.efetivo_mes ?? 0;
+          const pctAt = m.pct_atingido ?? 0;
 
-          let pct = 0;
-          let status: "OK" | "atencao" | "perdeu" | "neutro";
+          // Regra simplificada: o que importa é a COMISSÃO ganha.
+          // - comissao > 0 → ganhou (verde)
+          // - comissao = 0 → perdeu (vermelho), oportunidade clara
+          const ganhou = com > 0;
+          let pctDisplay = 0;
           let gap = 0;
           let detalhe = "";
 
           if (tipo === "Recomendador") {
-            pct = ef * 2; // efetivo 0.5 = 100%
-            if (ef < 0.5) {
-              status = "perdeu";
-              gap = (m.pct_meta ?? 0.005) * efMes - com;
-              detalhe = `Está em ${fmtPct(ef)}, gatilho de 50% zerou comissão. Recuperando ${fmtPct(0.5 - ef)} ativa ${fmtBRL(gap)}.`;
+            // Para Recomendador, exibimos o "Resultado Recomendador" (efetivo_fiscal é a %)
+            pctDisplay = ef;
+            if (!ganhou) {
+              // Estimativa de quanto ganharia se atingisse a faixa mínima
+              gap = (m.pct_meta ?? 0.005) * efMes;
+              detalhe = `Atingimento ${fmtPct(ef)} — comissão zerada. Estimativa de ganho ao atingir a próxima faixa: ${fmtBRL(gap)}.`;
             } else {
-              status = "OK";
-              detalhe = `Atingiu o gatilho com folga (${fmtPct(ef)} >= 50%).`;
+              detalhe = `Faixa paga: ${fmtPct(pctAt, 3)} sobre VBC = ${fmtBRL(com)}.`;
             }
           } else {
-            pct = meta > 0 ? ef / meta : 0;
-            if (ef < meta) {
-              status = "perdeu";
-              gap = (m.pct_ideal ?? 0.0065) * efMes - com;
-              detalhe = `Faltam ${tipo === "Cobertura" ? fmtNum(meta - ef) + " clientes" : fmtBRL(meta - ef)} para bater meta.`;
+            pctDisplay = meta > 0 ? ef / meta : 0;
+            if (!ganhou || ef < meta) {
+              gap = Math.max(0, (m.pct_ideal ?? 0.0065) * efMes - com);
+              const falta = meta - ef;
+              detalhe =
+                falta > 0
+                  ? `Faltam ${tipo === "Cobertura" ? fmtNum(falta) + " clientes" : fmtBRL(falta)} pra bater meta.`
+                  : `Meta batida. ${fmtPct(pctDisplay)} de atingimento.`;
             } else {
-              status = "OK";
-              detalhe = `Bateu meta. ${fmtPct(pct)} de atingimento.`;
+              detalhe = `Meta batida. ${fmtPct(pctDisplay)} de atingimento.`;
             }
           }
 
-          const cor =
-            status === "OK"
-              ? "hsl(152 60% 42%)"
-              : status === "atencao"
-                ? "hsl(38 92% 50%)"
-                : "hsl(0 72% 55%)";
+          const cor = ganhou ? "hsl(152 60% 42%)" : "hsl(0 72% 55%)";
 
           return (
             <div
@@ -113,29 +114,49 @@ export function MetaDrillModal({ open, onClose, bu, tipo, metas }: DrillDownProp
                     {m.criterio_nome}
                   </p>
                 </div>
-                <Badge
-                  variant={status === "OK" ? "success" : "destructive"}
-                  className="shrink-0"
-                >
-                  {fmtPct(Math.min(1.5, pct))}
+                <Badge variant={ganhou ? "success" : "destructive"} className="shrink-0">
+                  {ganhou ? "✓ " : "× "}
+                  {fmtPct(pctDisplay)}
                 </Badge>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                <Stat label="Efetivo Fiscal" value={tipo === "Cobertura" ? fmtNum(ef) : fmtBRL(ef)} />
-                <Stat label="Objetivo Meta" value={tipo === "Cobertura" ? fmtNum(meta) : fmtBRL(meta)} />
+                <Stat
+                  label={tipo === "Recomendador" ? "Resultado Rec." : "Efetivo Fiscal"}
+                  value={
+                    tipo === "Recomendador"
+                      ? fmtPct(ef)
+                      : tipo === "Cobertura"
+                        ? fmtNum(ef)
+                        : fmtBRL(ef)
+                  }
+                />
+                <Stat
+                  label="Objetivo Meta"
+                  value={
+                    tipo === "Recomendador"
+                      ? "50% (gatilho)"
+                      : tipo === "Cobertura"
+                        ? fmtNum(meta)
+                        : fmtBRL(meta)
+                  }
+                />
                 <Stat label="Efetivo Mês" value={fmtBRL(efMes, { compact: true })} />
-                <Stat label="Comissão" value={fmtBRL(com)} highlight={com > 0 ? "success" : "destructive"} />
+                <Stat
+                  label="Comissão"
+                  value={fmtBRL(com)}
+                  highlight={ganhou ? "success" : "destructive"}
+                />
               </div>
 
               <p className="text-sm" style={{ color: cor }}>
                 {detalhe}
               </p>
 
-              {gap > 100 && (
+              {!ganhou && gap > 100 && (
                 <div className="mt-2 inline-flex items-center gap-2 rounded-md bg-destructive/10 px-2.5 py-1 text-xs font-medium text-destructive">
                   <ArrowDownRight className="h-3 w-3" />
-                  Gap: {fmtBRL(gap)} deixados na mesa
+                  Gap estimado: {fmtBRL(gap)} de comissão perdida
                 </div>
               )}
             </div>

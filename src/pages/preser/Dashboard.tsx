@@ -194,7 +194,10 @@ export default function PreserDashboard() {
   }, [atual]);
 
   // ─── Heatmap interativo BU × Tipo ─────────────────────────────────
-  // status = "OK" (verde) | "atencao" (amarelo) | "perdeu" (vermelho)
+  // Status definido pela combinação comissão_ganha + gap:
+  // - OK (verde): toda comissão paga + gap < R$ 1k
+  // - atencao (amarelo): comissão paga mas com gap relevante
+  // - perdeu (vermelho): pelo menos uma meta com comissão = 0 OU gap grande
   type CellStatus = "OK" | "atencao" | "perdeu" | "sem_dado";
   const heatmapData = useMemo(() => {
     if (!atual) return { bus: [], tipos: [], cells: new Map<string, { pct: number; comissao: number; gap: number; status: CellStatus }>() };
@@ -208,37 +211,36 @@ export default function PreserDashboard() {
         let pct = 0;
         let comissao = 0;
         let gap = 0;
-        let zerouPorGatilho = false;
+        let algumaZerou = false;
         for (const m of metas) {
-          comissao += m.comissao ?? 0;
+          const com = m.comissao ?? 0;
+          comissao += com;
+          if (com === 0) algumaZerou = true;
           if (tipo === "Recomendador") {
             const ef = m.efetivo_fiscal ?? 0;
-            pct = Math.max(pct, ef * 2); // efetivo 0.5 = 100%
-            if (ef < 0.5) {
-              gap += (m.pct_meta ?? 0.005) * (m.efetivo_mes ?? 0) - (m.comissao ?? 0);
-              if ((m.comissao ?? 0) === 0) zerouPorGatilho = true;
+            pct = Math.max(pct, ef); // mostra o "Resultado Recomendador" real (43,3%, 76,7% etc.)
+            if (com === 0) {
+              gap += (m.pct_meta ?? 0.005) * (m.efetivo_mes ?? 0);
             }
           } else {
             const ef = m.efetivo_fiscal ?? 0;
             const meta = m.objetivo_meta ?? 0;
             if (meta > 0) pct = Math.max(pct, ef / meta);
             if (ef < meta && meta > 0) {
-              gap += (m.pct_ideal ?? 0.0065) * (m.efetivo_mes ?? 0) - (m.comissao ?? 0);
+              gap += (m.pct_ideal ?? 0.0065) * (m.efetivo_mes ?? 0) - com;
             }
           }
         }
         gap = Math.max(0, gap);
 
-        // status definido por: comissão ganha + gap restante
+        // Critério principal = comissão ganha
         let status: CellStatus;
-        if (tipo === "Recomendador" && zerouPorGatilho) {
-          status = "perdeu"; // não bateu gatilho 50% → zerou tudo
-        } else if (pct >= 1.0 && gap < 100) {
-          status = "OK"; // atingiu meta plena
-        } else if (pct >= 0.85) {
-          status = "atencao"; // perto da meta
+        if (algumaZerou) {
+          status = "perdeu"; // alguma meta zerou comissão
+        } else if (gap > 5000) {
+          status = "atencao"; // ganhou mas com gap relevante
         } else {
-          status = "perdeu"; // bem abaixo
+          status = "OK"; // tudo OK
         }
         cells.set(`${bu}|${tipo}`, { pct, comissao, gap, status });
       }
