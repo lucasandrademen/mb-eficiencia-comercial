@@ -632,7 +632,9 @@ export default function CustosSetor() {
             <div>
               <CardTitle>Análise por Funcionário</CardTitle>
               <CardDescription>
-                Custo individual com encargos e faturamento gerado (se vendedor).
+                <strong>% s/ Fat. Total</strong> = peso individual sobre o faturamento PRESER da
+                empresa · <strong>% s/ Próprio Fat.</strong> = só vendedores (custo dele ÷
+                faturamento gerado por ele).
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -678,48 +680,69 @@ export default function CustosSetor() {
                   <Th className="text-right">Bruto</Th>
                   <Th className="text-right">Custo c/ encargos</Th>
                   <Th className="text-right">Faturamento</Th>
-                  <Th className="text-right">% Custo/Fat.</Th>
+                  <Th className="text-right">% s/ Fat. Total</Th>
+                  <Th className="text-right">% s/ Próprio Fat.</Th>
                 </Tr>
               </THead>
               <TBody>
-                {funcionariosFiltrados.map((f, i) => (
-                  <Tr key={`${f.periodo}|${f.codigo}|${i}`}>
-                    <Td className="font-mono text-xs text-muted-foreground">{f.codigo}</Td>
-                    <Td className="font-medium">
-                      {f.nome}
-                      {f.eVendedor && (
-                        <Badge variant="success" className="ml-1.5 text-[10px]">
-                          vendedor
-                        </Badge>
-                      )}
-                    </Td>
-                    <Td className="text-muted-foreground text-xs">{f.cargo || "—"}</Td>
-                    <Td className="text-muted-foreground text-xs">{f.departamento || "—"}</Td>
-                    <Td className="text-right">{fmtBRL(f.bruto, { compact: true })}</Td>
-                    <Td className="text-right font-semibold text-destructive">
-                      {fmtBRL(f.custoTotal, { compact: true })}
-                    </Td>
-                    <Td className="text-right text-muted-foreground">
-                      {f.faturamento > 0 ? fmtBRL(f.faturamento, { compact: true }) : "—"}
-                    </Td>
-                    <Td className="text-right">
-                      {f.eVendedor ? (
-                        <span
-                          className={cn(
-                            "font-mono text-xs font-bold",
-                            f.pctCustoSobreFat < 0.1 ? "text-success" :
-                            f.pctCustoSobreFat < 0.3 ? "text-warning" :
-                            "text-destructive",
-                          )}
-                        >
-                          {fmtPct(f.pctCustoSobreFat, 1)}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </Td>
-                  </Tr>
-                ))}
+                {funcionariosFiltrados.map((f, i) => {
+                  const pctSobreTotal =
+                    faturamentoTotal > 0 ? f.custoTotal / faturamentoTotal : 0;
+                  return (
+                    <Tr key={`${f.periodo}|${f.codigo}|${i}`}>
+                      <Td className="font-mono text-xs text-muted-foreground">{f.codigo}</Td>
+                      <Td className="font-medium">
+                        {f.nome}
+                        {f.eVendedor && (
+                          <Badge variant="success" className="ml-1.5 text-[10px]">
+                            vendedor
+                          </Badge>
+                        )}
+                      </Td>
+                      <Td className="text-muted-foreground text-xs">{f.cargo || "—"}</Td>
+                      <Td className="text-muted-foreground text-xs">{f.departamento || "—"}</Td>
+                      <Td className="text-right">{fmtBRL(f.bruto, { compact: true })}</Td>
+                      <Td className="text-right font-semibold text-destructive">
+                        {fmtBRL(f.custoTotal, { compact: true })}
+                      </Td>
+                      <Td className="text-right text-muted-foreground">
+                        {f.faturamento > 0 ? fmtBRL(f.faturamento, { compact: true }) : "—"}
+                      </Td>
+                      <Td className="text-right">
+                        {semPreser ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <span
+                            className={cn(
+                              "font-mono text-xs font-bold",
+                              pctSobreTotal < 0.001 ? "text-success" :
+                              pctSobreTotal < 0.005 ? "text-warning" :
+                              "text-destructive",
+                            )}
+                          >
+                            {fmtPct(pctSobreTotal, 3)}
+                          </span>
+                        )}
+                      </Td>
+                      <Td className="text-right">
+                        {f.eVendedor ? (
+                          <span
+                            className={cn(
+                              "font-mono text-xs font-bold",
+                              f.pctCustoSobreFat < 0.1 ? "text-success" :
+                              f.pctCustoSobreFat < 0.3 ? "text-warning" :
+                              "text-destructive",
+                            )}
+                          >
+                            {fmtPct(f.pctCustoSobreFat, 1)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </Td>
+                    </Tr>
+                  );
+                })}
               </TBody>
             </Table>
             {funcionariosFiltrados.length === 0 && (
