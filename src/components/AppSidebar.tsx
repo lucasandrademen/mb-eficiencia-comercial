@@ -12,6 +12,7 @@ import {
   ChevronsRight,
   Briefcase,
   Receipt,
+  Building2,
   Handshake,
   Package,
   Truck,
@@ -37,6 +38,7 @@ const nav: NavItem[] = [
   { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
   { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
   { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
+  { to: "/custos-setor", label: "Custos por Setor", icon: Building2 },
   { to: "/upload", label: "Importação", icon: Upload },
 ];
 

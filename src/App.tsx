@@ -11,6 +11,7 @@ const Matriz = lazy(() => import("./pages/Matriz"));
 const Alertas = lazy(() => import("./pages/Alertas"));
 const Evolucao = lazy(() => import("./pages/Evolucao"));
 const Folha = lazy(() => import("./pages/Folha"));
+const CustosSetor = lazy(() => import("./pages/CustosSetor"));
 const PreserLayout = lazy(() => import("./pages/preser/PreserLayout"));
 const PreserDashboard = lazy(() => import("./pages/preser/Dashboard"));
 const PreserImportar = lazy(() => import("./pages/preser/Importar"));
@@ -42,6 +43,7 @@ export default function App() {
           <Route path="/alertas" element={<Alertas />} />
           <Route path="/evolucao" element={<Evolucao />} />
           <Route path="/folha" element={<Folha />} />
+          <Route path="/custos-setor" element={<CustosSetor />} />
           <Route element={<PreserLayout />}>
             <Route path="/preser" element={<PreserDashboard />} />
             <Route path="/preser/importar" element={<PreserImportar />} />
