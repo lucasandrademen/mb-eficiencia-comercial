@@ -555,41 +555,27 @@ export function EsforcoImpactoMatrix({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-[340px]">
+        <div className="h-[360px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 60 }}>
-              {/* Quadrantes */}
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 50, left: 70 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
               <XAxis
                 type="number"
                 dataKey="esforco"
                 name="Esforço"
                 domain={[0, 6]}
-                tick={{ fontSize: 11 }}
                 ticks={[1, 2, 3, 4, 5]}
-                label={{
-                  value: "Esforço (1=fácil, 5=difícil)",
-                  position: "bottom",
-                  fontSize: 11,
-                  fill: "hsl(var(--muted-foreground))",
-                }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               />
               <YAxis
                 type="number"
                 dataKey="impacto"
                 name="Impacto"
                 tickFormatter={(v) => fmtBRL(v, { compact: true })}
-                tick={{ fontSize: 11 }}
-                label={{
-                  value: "Impacto (R$)",
-                  angle: -90,
-                  position: "left",
-                  fontSize: 11,
-                  fill: "hsl(var(--muted-foreground))",
-                  offset: 30,
-                }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                width={70}
               />
-              <ZAxis type="number" range={[60, 400]} dataKey="impacto" />
+              <ZAxis type="number" range={[100, 600]} />
               <Tooltip
                 cursor={{ strokeDasharray: "3 3" }}
                 contentStyle={{
@@ -597,23 +583,48 @@ export function EsforcoImpactoMatrix({
                   border: "1px solid hsl(var(--border))",
                   fontSize: 12,
                 }}
-                formatter={(value: number, name: string) => {
-                  if (name === "Impacto") return [fmtBRL(value), name];
-                  return [value, name];
-                }}
-                labelFormatter={(_, items) => {
-                  const item = items?.[0]?.payload;
-                  return item ? `${item.nome} — ${item.categoria}` : "";
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload as OportunidadeMatriz;
+                  return (
+                    <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-elevated">
+                      <p className="font-bold">{d.nome}</p>
+                      <p className="mt-1 text-muted-foreground">{d.categoria}</p>
+                      <div className="mt-2 space-y-0.5">
+                        <p>
+                          <span className="text-muted-foreground">Esforço:</span>{" "}
+                          <span className="font-semibold">{d.esforco}/5</span>
+                        </p>
+                        <p>
+                          <span className="text-muted-foreground">Impacto:</span>{" "}
+                          <span className="font-bold" style={{ color: d.cor }}>
+                            {fmtBRL(d.impacto)}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  );
                 }}
               />
-              <Scatter data={oportunidades}>
-                {oportunidades.map((o, i) => (
-                  <Cell key={i} fill={o.cor} />
-                ))}
-              </Scatter>
+              {/* Um Scatter por categoria pra ter cor distinta */}
+              {(["Quick Win", "Estratégico", "Manutenção", "Pouca Prioridade"] as const).map((cat) => {
+                const subset = oportunidades.filter((o) => o.categoria === cat);
+                if (subset.length === 0) return null;
+                return (
+                  <Scatter
+                    key={cat}
+                    name={cat}
+                    data={subset}
+                    fill={corCategoria(cat)}
+                  />
+                );
+              })}
             </ScatterChart>
           </ResponsiveContainer>
         </div>
+        <p className="-mt-2 mb-2 text-center text-[10px] text-muted-foreground">
+          Eixo X: Esforço (1=fácil → 5=difícil) · Eixo Y: Impacto em R$
+        </p>
         {/* Legenda dos quadrantes */}
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 text-xs">
           <QuadrantLegend label="🎯 Quick Win" desc="Fácil + alto impacto" cor="hsl(152 60% 42%)" />
