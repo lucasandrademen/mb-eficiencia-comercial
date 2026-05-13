@@ -140,11 +140,27 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const valor_total_contabilizado = mTotContab ? parseBRL(mTotContab[1]) : null;
 
   // faturamento_ac: Efetivo Mês do Critério 21 (Garantia de crédito)
+  // O regex tolera variações: espaço, NBSP, quebras entre "(R$)" e o valor.
   const sec21 = criterioSections.find((c) => c.codigo === 21);
   let faturamento_ac: number | null = null;
   if (sec21) {
-    const mEf = sec21.body.match(/Efetivo M[êe]s\s*\(R\$\)\s*([\d\.]+,\d+)/);
-    faturamento_ac = mEf ? parseBRL(mEf[1]) : null;
+    // Tentativas em ordem de especificidade
+    const regexes = [
+      /Efetivo\s*M[êe]s\s*\(?\s*R\$\s*\)?\s*([\d\.]+,\d+)/i,
+      /Efetivo\s*M[êe]s[^0-9]*?([\d\.]+,\d+)/i,
+      /([\d\.]+,\d+)\s*%\s*de\s*Garantia/i, // último recurso: o número antes de "% de Garantia"
+    ];
+    for (const re of regexes) {
+      const m = sec21.body.match(re);
+      if (m && m[1]) {
+        const v = parseBRL(m[1]);
+        if (v > 1000) {
+          // sanity check: faturamento AC é sempre milhões
+          faturamento_ac = v;
+          break;
+        }
+      }
+    }
   }
 
   // IRRF/PIS/COFINS/CSLL — soma de todas as ocorrências na seção Contabilização (pág 8)
