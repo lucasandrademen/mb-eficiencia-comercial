@@ -289,25 +289,21 @@ const META_INFO: Record<
   number,
   { tipo: "VBC" | "Cobertura" | "Recomendador"; bu: string }
 > = {
+  // Purina (60, 61, 9, 59, 72) excluída — broker não opera Purina
   2: { tipo: "Recomendador", bu: "BRL1" },
   67: { tipo: "Recomendador", bu: "Farma" },
   70: { tipo: "Recomendador", bu: "BRN2" },
   71: { tipo: "Recomendador", bu: "BRN8" },
-  72: { tipo: "Recomendador", bu: "Purina" },
   3: { tipo: "VBC", bu: "BRL1" },
   5: { tipo: "VBC", bu: "BRL1" },
   11: { tipo: "VBC", bu: "BRN2" },
   62: { tipo: "VBC", bu: "BRN8" },
   14: { tipo: "VBC", bu: "Farma" },
-  60: { tipo: "VBC", bu: "Purina" },
-  61: { tipo: "VBC", bu: "Purina" },
   76: { tipo: "VBC", bu: "NESPRESSO" },
   4: { tipo: "Cobertura", bu: "BRL1" },
   6: { tipo: "Cobertura", bu: "BRL1" },
   12: { tipo: "Cobertura", bu: "BRN2" },
   63: { tipo: "Cobertura", bu: "BRN8" },
-  59: { tipo: "Cobertura", bu: "Purina" },
-  9: { tipo: "Cobertura", bu: "Purina" },
   77: { tipo: "Cobertura", bu: "NESPRESSO" },
 };
 
@@ -385,10 +381,13 @@ function parseMetas(sections: CriterioSection[]) {
 // Critérios já cobertos por SKUs/Drops/Metas (NÃO incluir em "outros")
 const COBERTOS = new Set([
   1, 20, 75, // SKUs
-  2, 67, 70, 71, 72, // Recomendadores
-  3, 5, 11, 14, 60, 61, 62, 76, // VBC
-  4, 6, 9, 12, 59, 63, 77, // Cobertura
+  2, 67, 70, 71, 72, // Recomendadores (72 Purina ignorada)
+  3, 5, 11, 14, 60, 61, 62, 76, // VBC (60, 61 Purina ignoradas)
+  4, 6, 9, 12, 59, 63, 77, // Cobertura (9, 59 Purina ignoradas)
 ]);
+
+/** BUs/categorias relacionadas a Purina — broker não opera Purina, ignoramos */
+const PURINA_KEYWORDS = /purina|nestle\s*purina/i;
 
 function parseOutros(sections: CriterioSection[]) {
   const out: ParsedPreser["outros"] = [];
@@ -397,6 +396,7 @@ function parseOutros(sections: CriterioSection[]) {
   for (const sec of sections) {
     if (COBERTOS.has(sec.codigo)) continue;
     if (vistos.has(sec.codigo)) continue;
+    if (PURINA_KEYWORDS.test(sec.nome)) continue; // ignora qualquer "outro" relacionado a Purina
 
     const body = sec.body;
     const mCom = body.match(/Valor total da comiss[ãa]o:\s*(-?[\d\.]+,\d+)/);

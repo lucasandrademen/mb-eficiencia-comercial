@@ -11,11 +11,13 @@ const Matriz = lazy(() => import("./pages/Matriz"));
 const Alertas = lazy(() => import("./pages/Alertas"));
 const Evolucao = lazy(() => import("./pages/Evolucao"));
 const Folha = lazy(() => import("./pages/Folha"));
+const PreserLayout = lazy(() => import("./pages/preser/PreserLayout"));
 const PreserDashboard = lazy(() => import("./pages/preser/Dashboard"));
 const PreserImportar = lazy(() => import("./pages/preser/Importar"));
 const PreserSku = lazy(() => import("./pages/preser/Sku"));
 const PreserCanais = lazy(() => import("./pages/preser/Canais"));
 const PreserMetas = lazy(() => import("./pages/preser/Metas"));
+const PreserOportunidades = lazy(() => import("./pages/preser/Oportunidades"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Fallback = () => (
@@ -37,11 +39,14 @@ export default function App() {
           <Route path="/alertas" element={<Alertas />} />
           <Route path="/evolucao" element={<Evolucao />} />
           <Route path="/folha" element={<Folha />} />
-          <Route path="/preser" element={<PreserDashboard />} />
-          <Route path="/preser/importar" element={<PreserImportar />} />
-          <Route path="/preser/sku" element={<PreserSku />} />
-          <Route path="/preser/canais" element={<PreserCanais />} />
-          <Route path="/preser/metas" element={<PreserMetas />} />
+          <Route element={<PreserLayout />}>
+            <Route path="/preser" element={<PreserDashboard />} />
+            <Route path="/preser/importar" element={<PreserImportar />} />
+            <Route path="/preser/sku" element={<PreserSku />} />
+            <Route path="/preser/canais" element={<PreserCanais />} />
+            <Route path="/preser/metas" element={<PreserMetas />} />
+            <Route path="/preser/oportunidades" element={<PreserOportunidades />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

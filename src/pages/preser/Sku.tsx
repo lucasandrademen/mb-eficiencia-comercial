@@ -1,29 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
+import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { fmtBRL, fmtPct } from "@/lib/format";
-import { getExtratoMaisRecente } from "@/lib/preser/api";
+import { usePreserData } from "@/contexts/PreserDataContext";
 import { CATEGORIA_NOMES } from "@/lib/preser/types";
-import type { PreserExtratoCompleto } from "@/lib/preser/types";
 import { PreserEmptyState } from "./PreserEmptyState";
 
 export default function PreserSku() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<PreserExtratoCompleto | null>(null);
+  const { loading, atual: data } = usePreserData();
   const [filtroCategoria, setFiltroCategoria] = useState<string>("");
   const [filtroDivisao, setFiltroDivisao] = useState<string>("");
   const [busca, setBusca] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setData(await getExtratoMaisRecente());
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
 
   const totalComissao = useMemo(
     () => data?.skus.reduce((s, r) => s + (r.comissao ?? 0), 0) ?? 0,
@@ -62,6 +51,7 @@ export default function PreserSku() {
       <PageHeader
         title="Análise por SKU"
         subtitle={`${data.skus.length} SKUs no extrato • Comissão total: ${fmtBRL(totalComissao)}`}
+        actions={<PreserPeriodoFilter />}
       />
 
       <Card className="mb-4">

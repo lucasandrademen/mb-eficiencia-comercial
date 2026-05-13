@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -11,12 +11,13 @@ import {
 } from "recharts";
 import { AlertTriangle, TrendingUp, CheckCircle } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { fmtBRL, fmtPct } from "@/lib/format";
-import { getExtratoMaisRecente } from "@/lib/preser/api";
-import type { PreserExtratoCompleto, PreserMeta } from "@/lib/preser/types";
+import { usePreserData } from "@/contexts/PreserDataContext";
+import type { PreserMeta } from "@/lib/preser/types";
 import { PreserEmptyState } from "./PreserEmptyState";
 
 const C_OK = "hsl(152 60% 42%)";
@@ -102,18 +103,7 @@ function faixaBadgeVariant(faixa: Oportunidade["faixaAtual"]) {
 }
 
 export default function PreserMetas() {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<PreserExtratoCompleto | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setData(await getExtratoMaisRecente());
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const { loading, atual: data } = usePreserData();
 
   const oportunidades = useMemo(() => {
     if (!data) return [];
@@ -161,6 +151,7 @@ export default function PreserMetas() {
       <PageHeader
         title="Metas e Gaps"
         subtitle="Quanto você está deixando na mesa por não bater cada faixa."
+        actions={<PreserPeriodoFilter />}
       />
 
       {/* Hero card: perda total */}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -25,15 +25,11 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
-import {
-  getExtratoMaisRecente,
-  getSerieTemporalBroker,
-  listExtratos,
-} from "@/lib/preser/api";
-import type { PreserExtrato, PreserExtratoCompleto } from "@/lib/preser/types";
+import { usePreserData } from "@/contexts/PreserDataContext";
 import { PreserEmptyState } from "./PreserEmptyState";
 import { cn } from "@/lib/utils";
 
@@ -54,29 +50,7 @@ const CRITERIO_COLORS = [
 ];
 
 export default function PreserDashboard() {
-  const [loading, setLoading] = useState(true);
-  const [atual, setAtual] = useState<PreserExtratoCompleto | null>(null);
-  const [historico, setHistorico] = useState<PreserExtrato[]>([]);
-  const [serie, setSerie] = useState<
-    { periodo: string; comissao: number; faturamento_ac: number; pct: number }[]
-  >([]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const [extrato, hist, s] = await Promise.all([
-          getExtratoMaisRecente(),
-          listExtratos(),
-          getSerieTemporalBroker(),
-        ]);
-        setAtual(extrato);
-        setHistorico(hist);
-        setSerie(s);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const { loading, atual, extratos: historico, serie } = usePreserData();
 
   const variacao = useMemo(() => {
     if (serie.length < 2) return null;
@@ -164,6 +138,7 @@ export default function PreserDashboard() {
       <PageHeader
         title="Remuneração Broker (PRESER)"
         subtitle={`${periodoLabel_} • ${historico.length} extrato(s) no histórico`}
+        actions={<PreserPeriodoFilter />}
       />
 
       {/* Alertas críticos */}
@@ -453,11 +428,12 @@ export default function PreserDashboard() {
       </div>
 
       {/* Links para módulos analíticos */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
+          { to: "/preser/oportunidades", label: "Oportunidades", desc: "Quanto está perdendo por canal/meta" },
           { to: "/preser/sku", label: "Análise por SKU", desc: "Mix por categoria e divisão" },
           { to: "/preser/canais", label: "Canais & Drops", desc: "R$/drop e oportunidades" },
-          { to: "/preser/metas", label: "Metas e Gaps", desc: "Quanto está na mesa" },
+          { to: "/preser/metas", label: "Metas e Gaps", desc: "Atingimento por critério" },
         ].map((l) => (
           <Link
             key={l.to}
