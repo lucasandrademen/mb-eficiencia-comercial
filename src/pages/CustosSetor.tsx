@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -61,10 +62,31 @@ type Dir = "asc" | "desc";
 
 export default function CustosSetor() {
   const { dataset, rows, periodosSelecionados } = useData();
-  const [filtroDept, setFiltroDept] = useState<string>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Deep link: /custos-setor?dept=LOGISTICA → filtra setores que comecem com isso
+  // /custos-setor?dept=ADMINISTRATIVO → filtro exato (single match)
+  // /custos-setor?dept=all → todos
+  const deptFromUrl = searchParams.get("dept") ?? "all";
+  const [filtroDept, setFiltroDept] = useState<string>(deptFromUrl);
   const [busca, setBusca] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("custoTotal");
   const [dir, setDir] = useState<Dir>("desc");
+
+  // Sincroniza filtro com URL (para deep-link funcionar)
+  useEffect(() => {
+    if (filtroDept === "all") {
+      if (searchParams.has("dept")) {
+        searchParams.delete("dept");
+        setSearchParams(searchParams, { replace: true });
+      }
+    } else {
+      if (searchParams.get("dept") !== filtroDept) {
+        searchParams.set("dept", filtroDept);
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroDept]);
 
   // ─── Carrega extratos PRESER (faturamento real do broker) ─────────
   const [extratosPreser, setExtratosPreser] = useState<PreserExtrato[]>([]);
@@ -241,7 +263,14 @@ export default function CustosSetor() {
   // ─── Funcionários filtrados ──────────────────────────────────────
   const funcionariosFiltrados = useMemo(() => {
     let out = folhaEnriquecida;
-    if (filtroDept !== "all") out = out.filter((f) => (f.departamento || "—") === filtroDept);
+    if (filtroDept !== "all") {
+      // Aceita match exato OU match por prefixo (ex: LOGISTICA pega "LOGISTICA EXTERNA" e "LOGISTICA INTERNA")
+      out = out.filter((f) => {
+        const dept = (f.departamento || "—").toUpperCase();
+        const alvo = filtroDept.toUpperCase();
+        return dept === alvo || dept.startsWith(alvo + " ");
+      });
+    }
     if (busca) {
       const needle = busca.toLowerCase();
       out = out.filter(
@@ -646,9 +675,35 @@ export default function CustosSetor() {
                 className="rounded-md border border-border bg-card px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="all">Todos setores</option>
-                {depts.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
+                {(() => {
+                  // Detecta grupos por prefixo (ex: LOGISTICA EXTERNA + LOGISTICA INTERNA → grupo LOGISTICA)
+                  const grupos = new Map<string, number>();
+                  for (const d of depts) {
+                    const primeira = d.split(" ")[0];
+                    grupos.set(primeira, (grupos.get(primeira) ?? 0) + 1);
+                  }
+                  const opcoesGrupo = [...grupos.entries()]
+                    .filter(([, n]) => n > 1)
+                    .map(([prefixo]) => prefixo);
+                  return (
+                    <>
+                      {opcoesGrupo.length > 0 && (
+                        <optgroup label="Grupos">
+                          {opcoesGrupo.map((g) => (
+                            <option key={`grupo-${g}`} value={g}>
+                              {g} (todos)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="Específicos">
+                        {depts.map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </optgroup>
+                    </>
+                  );
+                })()}
               </select>
               {(filtroDept !== "all" || busca) && (
                 <button
