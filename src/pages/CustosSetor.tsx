@@ -284,12 +284,22 @@ export default function CustosSetor() {
   }, [folhaEnriquecida, filtroDept, busca]);
 
   // ─── KPIs ─────────────────────────────────────────────────────────
+  // Folha já com filtro de departamento aplicado (afeta KPIs e charts)
+  const folhaEscopo = useMemo(() => {
+    if (filtroDept === "all") return folhaEnriquecida;
+    return folhaEnriquecida.filter((f) => {
+      const dept = (f.departamento || "—").toUpperCase();
+      const alvo = filtroDept.toUpperCase();
+      return dept === alvo || dept.startsWith(alvo + " ");
+    });
+  }, [folhaEnriquecida, filtroDept]);
+
   const kpis = useMemo(() => {
-    const custoBruto = folhaEnriquecida.reduce((s, f) => s + f.bruto, 0);
-    const custoEncargos = folhaEnriquecida.reduce((s, f) => s + f.encargos, 0);
-    const custoTotal = folhaEnriquecida.reduce((s, f) => s + f.custoTotal, 0);
-    const headcount = folhaEnriquecida.length;
-    // Resultado Bruto = Comissão líquida recebida pela MB − Custo da folha
+    const custoBruto = folhaEscopo.reduce((s, f) => s + f.bruto, 0);
+    const custoEncargos = folhaEscopo.reduce((s, f) => s + f.encargos, 0);
+    const custoTotal = folhaEscopo.reduce((s, f) => s + f.custoTotal, 0);
+    const headcount = folhaEscopo.length;
+    // Resultado Bruto = Comissão líquida recebida pela MB − Custo do escopo selecionado
     const resultadoBruto = comissaoLiquida - custoTotal;
     const pctCustoComissao = comissaoLiquida > 0 ? custoTotal / comissaoLiquida : 0;
     return {
@@ -300,7 +310,7 @@ export default function CustosSetor() {
       resultadoBruto,
       pctCustoComissao,
     };
-  }, [folhaEnriquecida, comissaoLiquida]);
+  }, [folhaEscopo, comissaoLiquida]);
 
   const depts = useMemo(
     () => Array.from(new Set((folhaEnriquecida).map((f) => f.departamento || "—"))).sort(),
@@ -340,7 +350,7 @@ export default function CustosSetor() {
   return (
     <>
       <PageHeader
-        title="Custos por Setor"
+        title={filtroDept === "all" ? "Custos por Setor" : `Custos · ${filtroDept}`}
         subtitle={
           <>
             Quanto cada setor custa sobre a comissão recebida{" "}
