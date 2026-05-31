@@ -95,17 +95,33 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   // O ciclo PRESER é "mês M-1 dia 20" até "mês M dia 19", então a atividade
   // comercial é do mês M-1. Ex: Apuração 2026/4 = ciclo Mar/20 a Abr/19 =
   // atividade de MARÇO. Salvamos como mês M-1.
-  const mApur = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
-  let ano = mApur ? parseInt(mApur[1], 10) : 2026;
-  let mesNum = mApur ? parseInt(mApur[2], 10) : 1;
-  // Recua 1 mês (com virada de ano se preciso)
-  mesNum -= 1;
-  if (mesNum <= 0) {
-    mesNum = 12;
-    ano -= 1;
+  // Formato A: "Apuração: 2026/4"   (ano/mês logo após o rótulo)
+  // Formato B: "Mês Ano  4 2026  / Apuração:"  (valores antes do rótulo)
+  const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
+  const mB = allText.match(/M[êe]s\s+Ano\s+(\d{1,2})\s+(\d{4})\s*\/\s*Apura[çc][ãa]o/i);
+
+  let ano: number | null = null;
+  let mesNum: number | null = null;
+  if (mA) {
+    ano = parseInt(mA[1], 10);
+    mesNum = parseInt(mA[2], 10);
+  } else if (mB) {
+    mesNum = parseInt(mB[1], 10);
+    ano = parseInt(mB[2], 10);
   }
-  const mes = String(mesNum).padStart(2, "0");
-  const periodo = `${ano}-${mes}-01`;
+
+  // Recua 1 mês (com virada de ano se preciso) — atividade comercial é M-1.
+  // Se o parser NÃO detectar o período, deixa vazio para o usuário escolher
+  // no seletor de mês (antes isto chutava 2025-12 e gerava dados errados).
+  let periodo = "";
+  if (ano !== null && mesNum !== null) {
+    mesNum -= 1;
+    if (mesNum <= 0) {
+      mesNum = 12;
+      ano -= 1;
+    }
+    periodo = `${ano}-${String(mesNum).padStart(2, "0")}-01`;
+  }
 
   // ── 2.2 Split por critério ─────────────────────────────────────────────
   // "Critério: 1Representação Comercial..."  OU  "Critério:108Seguro..."
