@@ -19,6 +19,22 @@ export async function listExtratos(): Promise<PreserExtrato[]> {
   return (data ?? []) as PreserExtrato[];
 }
 
+/** Apaga um extrato (mês) e todas as suas linhas-filhas nas 5 tabelas */
+export async function deletePreserExtrato(id: string): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Supabase não configurado");
+
+  await Promise.all([
+    sb.from("preser_sku").delete().eq("extrato_id", id),
+    sb.from("preser_drops").delete().eq("extrato_id", id),
+    sb.from("preser_metas").delete().eq("extrato_id", id),
+    sb.from("preser_outros").delete().eq("extrato_id", id),
+  ]);
+
+  const { error } = await sb.from("preser_extrato").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function getExtratoPorId(id: string): Promise<PreserExtratoCompleto | null> {
   const sb = getSupabase();
   if (!sb) return null;

@@ -10,15 +10,18 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
 import { usePreserData } from "@/contexts/PreserDataContext";
 import { supabaseConfigured } from "@/lib/preser/supabase";
 import { savePreser, type ParsedPreser } from "@/lib/preser/importar";
+import { deletePreserExtrato } from "@/lib/preser/api";
 import { parsePreserExtratoPdf } from "@/lib/preser/parseExtratoPdf";
 import { PreserEmptyState } from "./PreserEmptyState";
 
@@ -66,6 +69,10 @@ export default function PreserImportar() {
 
   // mês escolhido no card que está sendo importado ("YYYY-MM")
   const [mesAlvo, setMesAlvo] = useState<string>("");
+
+  // confirmação/execução de exclusão de um mês importado
+  const [aExcluir, setAExcluir] = useState<{ id: string; label: string } | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   // campos editáveis do extrato
   const [periodo, setPeriodo] = useState("");
@@ -125,6 +132,23 @@ export default function PreserImportar() {
     setMesAlvo(mesKey);
     setError(null);
     inputRef.current?.click();
+  };
+
+  // Confirma e executa a exclusão de um mês importado
+  const confirmarExclusao = async () => {
+    if (!aExcluir) return;
+    setExcluindo(true);
+    try {
+      await deletePreserExtrato(aExcluir.id);
+      await reload();
+      toast.success(`${aExcluir.label} removido.`);
+      setAExcluir(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Erro ao excluir: ${msg}`);
+    } finally {
+      setExcluindo(false);
+    }
   };
 
   const onConfirm = async () => {
@@ -287,6 +311,11 @@ export default function PreserImportar() {
                   comissao={ex?.valor_total_comissao ?? null}
                   importado={Boolean(ex)}
                   onClick={() => escolherMes(mesKey)}
+                  onDelete={
+                    ex
+                      ? () => setAExcluir({ id: ex.id, label: `${nome}/${ano}` })
+                      : undefined
+                  }
                 />
               );
             })}
@@ -491,6 +520,47 @@ export default function PreserImportar() {
           </CardContent>
         </Card>
       )}
+
+      {/* Confirmação de exclusão */}
+      <Dialog
+        open={Boolean(aExcluir)}
+        onClose={() => !excluindo && setAExcluir(null)}
+        title="Excluir mês importado"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <p className="text-sm">
+              Tem certeza que deseja excluir <strong>{aExcluir?.label}</strong>? Todos os dados
+              importados desse mês (SKUs, drops, metas e demais critérios) serão apagados. Esta
+              ação não pode ser desfeita.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setAExcluir(null)}
+              disabled={excluindo}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarExclusao}
+              disabled={excluindo}
+              className="gap-2"
+            >
+              {excluindo ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              {excluindo ? "Excluindo…" : "Excluir mês"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </>
   );
 }
@@ -501,48 +571,68 @@ function MonthCard({
   comissao,
   importado,
   onClick,
+  onDelete,
 }: {
   nome: string;
   ano: number;
   comissao: number | null;
   importado: boolean;
   onClick: () => void;
+  onDelete?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`group flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-all hover:shadow-md ${
+    <div
+      className={`group relative rounded-lg border transition-all hover:shadow-md ${
         importado
           ? "border-success/40 bg-success/5 hover:border-success"
           : "border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/5"
       }`}
     >
-      <div className="flex w-full items-center justify-between">
-        <span className="text-sm font-semibold">{nome}</span>
-        <span className="text-[11px] text-muted-foreground">{ano}</span>
-      </div>
-
-      {importado ? (
-        <>
-          <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-success">
-            <CheckCircle className="h-3.5 w-3.5" /> Importado
-          </span>
-          <span className="text-base font-bold">{fmtBRL(comissao, { compact: true })}</span>
-          <span className="text-[10px] text-muted-foreground">
-            comissão · clique p/ reimportar
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-            <Plus className="h-3.5 w-3.5" /> Pendente
-          </span>
-          <span className="flex items-center gap-1.5 text-sm text-muted-foreground group-hover:text-primary">
-            <Upload className="h-4 w-4" /> Importar PDF
-          </span>
-        </>
+      {importado && onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute right-2 top-2 z-10 rounded-md p-1.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+          aria-label={`Excluir ${nome}`}
+          title="Excluir este mês"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       )}
-    </button>
+
+      <button
+        onClick={onClick}
+        className="flex w-full flex-col items-start gap-1 p-4 text-left"
+      >
+        <div className="flex w-full items-center justify-between pr-6">
+          <span className="text-sm font-semibold">{nome}</span>
+          <span className="text-[11px] text-muted-foreground">{ano}</span>
+        </div>
+
+        {importado ? (
+          <>
+            <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-success">
+              <CheckCircle className="h-3.5 w-3.5" /> Importado
+            </span>
+            <span className="text-base font-bold">{fmtBRL(comissao, { compact: true })}</span>
+            <span className="text-[10px] text-muted-foreground">
+              comissão · clique p/ reimportar
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+              <Plus className="h-3.5 w-3.5" /> Pendente
+            </span>
+            <span className="flex items-center gap-1.5 text-sm text-muted-foreground group-hover:text-primary">
+              <Upload className="h-4 w-4" /> Importar PDF
+            </span>
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 
