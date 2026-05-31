@@ -1,28 +1,71 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, X } from "lucide-react";
+import {
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+} from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
+import { usePreserData } from "@/contexts/PreserDataContext";
 import { supabaseConfigured } from "@/lib/preser/supabase";
 import { savePreser, type ParsedPreser } from "@/lib/preser/importar";
 import { parsePreserExtratoPdf } from "@/lib/preser/parseExtratoPdf";
 import { PreserEmptyState } from "./PreserEmptyState";
+
+const MESES_CURTOS = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
 
 type Step = "idle" | "parsing" | "preview" | "saving" | "done";
 
 export default function PreserImportar() {
   const nav = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
+  const { extratos, reload } = usePreserData();
 
   const [step, setStep] = useState<Step>("idle");
   const [file, setFile] = useState<File | null>(null);
   const [parsed, setParsed] = useState<ParsedPreser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+
+  // mapa "YYYY-MM" → extrato já importado
+  const importados = useMemo(() => {
+    const m = new Map<string, (typeof extratos)[number]>();
+    for (const e of extratos) m.set(e.periodo.slice(0, 7), e);
+    return m;
+  }, [extratos]);
+
+  // ano exibido no grid de cards (default: ano mais recente importado, ou 2026)
+  const anoMaisRecente = useMemo(() => {
+    const anos = extratos.map((e) => parseInt(e.periodo.slice(0, 4), 10)).filter(Boolean);
+    return anos.length ? Math.max(...anos) : 2026;
+  }, [extratos]);
+  const [ano, setAno] = useState<number>(anoMaisRecente);
+
+  // mês escolhido no card que está sendo importado ("YYYY-MM")
+  const [mesAlvo, setMesAlvo] = useState<string>("");
 
   // campos editáveis do extrato
   const [periodo, setPeriodo] = useState("");
@@ -54,8 +97,9 @@ export default function PreserImportar() {
     try {
       const data = await parsePreserExtratoPdf(f);
       setParsed(data);
-      // período vem como "YYYY-MM-DD"; o seletor de mês usa "YYYY-MM"
-      setPeriodo((data.extrato.periodo ?? "").slice(0, 7));
+      // Se o usuário escolheu um mês pelo card, ele manda; senão usa o que o
+      // parser detectou ("YYYY-MM-DD" → "YYYY-MM").
+      setPeriodo(mesAlvo || (data.extrato.periodo ?? "").slice(0, 7));
       setValorTotal(String(data.extrato.valor_total_comissao ?? ""));
       setValorContabilizado(String(data.extrato.valor_total_contabilizado ?? ""));
       setStep("preview");
@@ -64,7 +108,7 @@ export default function PreserImportar() {
       setError(msg);
       setStep("idle");
     }
-  }, []);
+  }, [mesAlvo]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -75,6 +119,13 @@ export default function PreserImportar() {
     },
     [handleFile],
   );
+
+  // Clique num card de mês → fixa o mês e abre o seletor de arquivo
+  const escolherMes = (mesKey: string) => {
+    setMesAlvo(mesKey);
+    setError(null);
+    inputRef.current?.click();
+  };
 
   const onConfirm = async () => {
     if (!parsed) return;
@@ -95,6 +146,8 @@ export default function PreserImportar() {
         },
       };
       await savePreser(patched);
+      // atualiza a lista de meses importados (os cards) em segundo plano
+      reload().catch(() => {});
       setStep("done");
       toast.success("Extrato PRESER importado com sucesso!");
     } catch (err: unknown) {
@@ -109,6 +162,8 @@ export default function PreserImportar() {
     setFile(null);
     setParsed(null);
     setError(null);
+    setMesAlvo("");
+    if (inputRef.current) inputRef.current.value = "";
   };
 
   if (step === "done") {
@@ -158,40 +213,90 @@ export default function PreserImportar() {
         </Card>
       )}
 
-      {/* Upload zone */}
+      {/* input de arquivo (compartilhado por todos os cards e pelo drag&drop) */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+        }}
+      />
+
+      {/* Grid de cards por mês */}
       {step === "idle" && (
-        <Card
-          className={`cursor-pointer border-2 border-dashed transition-colors ${
-            drag ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-          }`}
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDrag(true);
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={onDrop}
-        >
-          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-            <Upload className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium">Arraste o PDF aqui ou clique para selecionar</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Extrato PRESER — Nestlé do Brasil • máx 12MB
-              </p>
+        <div className="space-y-4">
+          {/* Resumo + navegação de ano */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setAno((a) => a - 1)}
+                className="rounded-md border border-border bg-card p-1.5 hover:bg-secondary"
+                aria-label="Ano anterior"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-[3rem] text-center text-lg font-bold">{ano}</span>
+              <button
+                onClick={() => setAno((a) => a + 1)}
+                className="rounded-md border border-border bg-card p-1.5 hover:bg-secondary"
+                aria-label="Próximo ano"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-              }}
-            />
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm bg-success/70" /> Importado
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-sm border border-dashed border-border" />{" "}
+                Pendente
+              </span>
+              <Badge variant="muted">
+                {Array.from({ length: 12 }).filter((_, i) =>
+                  importados.has(`${ano}-${String(i + 1).padStart(2, "0")}`),
+                ).length}
+                /12 importados
+              </Badge>
+            </div>
+          </div>
+
+          {/* Cards */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+            className={`grid grid-cols-2 gap-3 rounded-lg sm:grid-cols-3 lg:grid-cols-4 ${
+              drag ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""
+            }`}
+          >
+            {MESES_CURTOS.map((nome, i) => {
+              const mesKey = `${ano}-${String(i + 1).padStart(2, "0")}`;
+              const ex = importados.get(mesKey);
+              return (
+                <MonthCard
+                  key={mesKey}
+                  nome={nome}
+                  ano={ano}
+                  comissao={ex?.valor_total_comissao ?? null}
+                  importado={Boolean(ex)}
+                  onClick={() => escolherMes(mesKey)}
+                />
+              );
+            })}
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Clique no mês para enviar o PDF — ou arraste o arquivo sobre os cards.
+            {drag && " Solte para importar."}
+          </p>
+        </div>
       )}
 
       {/* Parsing */}
@@ -387,6 +492,57 @@ export default function PreserImportar() {
         </Card>
       )}
     </>
+  );
+}
+
+function MonthCard({
+  nome,
+  ano,
+  comissao,
+  importado,
+  onClick,
+}: {
+  nome: string;
+  ano: number;
+  comissao: number | null;
+  importado: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-all hover:shadow-md ${
+        importado
+          ? "border-success/40 bg-success/5 hover:border-success"
+          : "border-2 border-dashed border-border hover:border-primary/60 hover:bg-primary/5"
+      }`}
+    >
+      <div className="flex w-full items-center justify-between">
+        <span className="text-sm font-semibold">{nome}</span>
+        <span className="text-[11px] text-muted-foreground">{ano}</span>
+      </div>
+
+      {importado ? (
+        <>
+          <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-success">
+            <CheckCircle className="h-3.5 w-3.5" /> Importado
+          </span>
+          <span className="text-base font-bold">{fmtBRL(comissao, { compact: true })}</span>
+          <span className="text-[10px] text-muted-foreground">
+            comissão · clique p/ reimportar
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+            <Plus className="h-3.5 w-3.5" /> Pendente
+          </span>
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground group-hover:text-primary">
+            <Upload className="h-4 w-4" /> Importar PDF
+          </span>
+        </>
+      )}
+    </button>
   );
 }
 
