@@ -54,7 +54,8 @@ export default function PreserImportar() {
     try {
       const data = await parsePreserExtratoPdf(f);
       setParsed(data);
-      setPeriodo(data.extrato.periodo ?? "");
+      // período vem como "YYYY-MM-DD"; o seletor de mês usa "YYYY-MM"
+      setPeriodo((data.extrato.periodo ?? "").slice(0, 7));
       setValorTotal(String(data.extrato.valor_total_comissao ?? ""));
       setValorContabilizado(String(data.extrato.valor_total_contabilizado ?? ""));
       setStep("preview");
@@ -77,13 +78,18 @@ export default function PreserImportar() {
 
   const onConfirm = async () => {
     if (!parsed) return;
+    if (!/^\d{4}-\d{2}$/.test(periodo)) {
+      toast.error("Selecione o mês de referência antes de confirmar.");
+      return;
+    }
     setStep("saving");
     try {
       const patched: ParsedPreser = {
         ...parsed,
         extrato: {
           ...parsed.extrato,
-          periodo,
+          // grava sempre o primeiro dia do mês escolhido
+          periodo: `${periodo}-01`,
           valor_total_comissao: parseFloat(valorTotal) || null,
           valor_total_contabilizado: parseFloat(valorContabilizado) || null,
         },
@@ -115,7 +121,7 @@ export default function PreserImportar() {
             <div>
               <p className="text-lg font-semibold">Importação concluída!</p>
               <p className="text-sm text-muted-foreground">
-                {periodoLabel(periodo.slice(0, 7))} salvo com sucesso nas 5 tabelas.
+                {periodoLabel(periodo)} salvo com sucesso nas 5 tabelas.
               </p>
             </div>
             <div className="flex gap-2">
@@ -226,7 +232,7 @@ export default function PreserImportar() {
               <CardDescription>Corrija campos se o parser errou.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Período (YYYY-MM-DD)" value={periodo} onChange={setPeriodo} />
+              <MonthField label="Mês de referência" value={periodo} onChange={setPeriodo} />
               <Field
                 label="Receita broker total (R$)"
                 value={valorTotal}
@@ -403,6 +409,36 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
       />
+    </div>
+  );
+}
+
+function MonthField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <input
+        type="month"
+        lang="pt-BR"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+      />
+      {value && (
+        <p className="mt-1 text-[11px] capitalize text-muted-foreground">
+          {periodoLabel(value)}
+        </p>
+      )}
     </div>
   );
 }
