@@ -40,18 +40,20 @@ function classificar(meta: PreserMeta): Oportunidade | null {
   const ideal = meta.objetivo_ideal ?? 0;
 
   if (meta.tipo === "Recomendador") {
-    const pctRealiz = alvo > 0 ? real / alvo : 0;
-    if (real < 0.5) {
+    // A fonte de verdade é a COMISSÃO do extrato: se foi paga (>0), ganhou —
+    // mesmo abaixo de 50% (a Nestlé aplica faixas que nem sempre zeram em 50%).
+    // Só é "oportunidade perdida" quando a comissão veio zerada.
+    if ((meta.comissao ?? 0) === 0) {
       return {
         meta,
         faixaAtual: "abaixo",
         pctRealiz: real,
-        proximaFaixa: "Gatilho 50% (recupera comissão inteira)",
-        gap: 0.5 - real,
+        proximaFaixa: "Recupera comissão ao atingir a faixa de pagamento",
+        gap: Math.max(0, 0.5 - real),
         ganhoExtra: alvo > 0 ? alvo * (meta.pct_meta ?? 0.005) : 0,
       };
     }
-    return null; // recomendador batido — sem gap
+    return null; // recomendador pago — sem gap
   }
 
   const pctRealiz = alvo > 0 ? real / alvo : 0;
@@ -236,22 +238,25 @@ export default function PreserMetas() {
           <p className="text-sm font-semibold text-muted-foreground">Recomendadores</p>
           {recomendadores.map((m) => {
             const pct = m.efetivo_fiscal ?? 0;
-            const ok = pct >= 0.5;
+            const com = m.comissao ?? 0;
+            // "Pago" segue a COMISSÃO real do extrato (fonte de verdade),
+            // não a regra fixa de 50% — que nem sempre vale.
+            const pago = com > 0;
             return (
               <Card
                 key={m.id}
-                className={ok ? "border-success/40 bg-success/5" : "border-destructive/40 bg-destructive/5"}
+                className={pago ? "border-success/40 bg-success/5" : "border-destructive/40 bg-destructive/5"}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-semibold">{m.bu}</p>
-                    <Badge variant={ok ? "success" : "destructive"}>
-                      {ok ? "Pago" : "Zerado"}
+                    <Badge variant={pago ? "success" : "destructive"}>
+                      {pago ? "Pago" : "Zerado"}
                     </Badge>
                   </div>
                   <p className="mt-2 text-2xl font-bold">{fmtPct(pct)}</p>
                   <p className="text-xs text-muted-foreground">
-                    {ok ? "Acima do gatilho 50%" : "Abaixo do gatilho 50%"}
+                    Atingimento (gatilho de referência: 50%)
                   </p>
                   {/* Barra de progresso */}
                   <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
@@ -259,7 +264,7 @@ export default function PreserMetas() {
                       className="h-full rounded-full transition-all"
                       style={{
                         width: `${Math.min(pct * 100 * 2, 100)}%`,
-                        background: ok ? C_OK : C_BAD,
+                        background: pago ? C_OK : C_BAD,
                       }}
                     />
                   </div>
@@ -269,7 +274,9 @@ export default function PreserMetas() {
                     <span>100%</span>
                   </div>
                   <p className="mt-2 text-sm font-medium">
-                    {ok ? fmtBRL(m.comissao) : "R$ 0 — perdeu " + fmtBRL((m.efetivo_mes ?? 0) * (m.pct_meta ?? 0.005))}
+                    {pago
+                      ? `Comissão paga: ${fmtBRL(com)}`
+                      : "R$ 0 — sem comissão neste mês"}
                   </p>
                 </CardContent>
               </Card>

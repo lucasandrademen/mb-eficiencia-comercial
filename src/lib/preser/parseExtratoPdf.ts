@@ -86,9 +86,22 @@ async function extractPagesAsLines(file: File): Promise<PageLines[]> {
 // 2. Parser principal
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Em alguns extratos, a ordenação por coordenada inverte o cabeçalho do
+ * critério, gerando "<código> <Nome do critério>\nCritério:" em vez de
+ * "Critério: <código> <Nome>". Sem normalizar, splitByCriterio PERDE esses
+ * critérios inteiros (bug que zerava BRL1/Recomendador e dezenas de "Outros").
+ */
+function normalizeCriterioInvertido(text: string): string {
+  return text.replace(
+    /^(\d{1,3})\s+([A-Za-zÀ-ÿ][^\n]*?)\s*\n(Crit[ée]rio:)\s*$/gm,
+    "Critério: $1 $2",
+  );
+}
+
 export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const pages = await extractPagesAsLines(file);
-  const allText = pages.flatMap((p) => p.lines).join("\n");
+  const allText = normalizeCriterioInvertido(pages.flatMap((p) => p.lines).join("\n"));
 
   // ── 2.1 Cabeçalho: período ─────────────────────────────────────────────
   // "Apuração: YYYY/M" no PDF refere-se ao CICLO que FECHA dia 19 do mês M.
@@ -350,6 +363,20 @@ const META_INFO: Record<
   77: { tipo: "Cobertura", bu: "NESPRESSO" },
 };
 
+/**
+ * Extrai "Valor total da comissão" de um trecho. No PDF da Nestlé, o valor às
+ * vezes vem DEPOIS do rótulo ("Valor total da comissão: 11.332,420") e às vezes
+ * ANTES ("67.344,240 \n Valor total da comissão:") — dependendo do alinhamento
+ * por coordenada. Tenta os dois para não perder comissões (bug do BRL1/Maio).
+ */
+function extractComissaoTotal(body: string): number | null {
+  const depois = body.match(/Valor total da comiss[ãa]o:\s*(-?[\d\.]+,\d+)/);
+  if (depois) return parseBRL(depois[1]);
+  const antes = body.match(/(-?[\d\.]+,\d+)\s*Valor total da comiss[ãa]o:/);
+  if (antes) return parseBRL(antes[1]);
+  return null;
+}
+
 function parseMetas(sections: CriterioSection[]) {
   // Map por chave (codigo|bu|tipo) — duplicatas (ex: critério aparece na seção
   // de cálculo E na seção textual de "Informações Adicionais") são merged
@@ -372,13 +399,12 @@ function parseMetas(sections: CriterioSection[]) {
       const mAt = body.match(/%\s*Atingimento\s*=\s*([\d\.,]+)%/);
       const mEf = body.match(/VBC Efetivo\s*=\s*R?\$?\s*([\d\.,]+)/);
       const mRes = body.match(/Resultado Recomendador[^-]*-\s*([\d\.,]+)%/);
-      const mCom = body.match(/Valor total da comiss[ãa]o:\s*([\d\.]+,\d+|-[\d\.]+,\d+)/);
       // Recomendadores usam "." como decimal: "0.550%", "14585831.790"
       if (mAt) pct_atingido = parseFloat(mAt[1].replace(",", ".")) / 100;
       if (mEf) efetivo_mes = parseFloat(mEf[1].replace(",", "."));
       if (mRes) efetivo_fiscal = parseFloat(mRes[1].replace(",", ".")) / 100;
       objetivo_meta = 0.5; // gatilho de 50%
-      if (mCom) comissao = parseBRL(mCom[1]);
+      comissao = extractComissaoTotal(body); // pega valor antes OU depois do rótulo
     } else {
       // VBC / Cobertura: linha de números após o header da tabela
       // VBC: "Objetivo (R$) Efetivo Fiscal (R$) % Atingido Efetivo Mês (R$) Comissão"
@@ -395,8 +421,7 @@ function parseMetas(sections: CriterioSection[]) {
         efetivo_mes = parseBRL(mNum[4]);
         comissao = parseBRL(mNum[5]);
       } else {
-        const mCom = body.match(/Valor total da comiss[ãa]o:\s*(-?[\d\.]+,\d+)/);
-        if (mCom) comissao = parseBRL(mCom[1]);
+        comissao = extractComissaoTotal(body);
       }
     }
 
@@ -460,13 +485,8 @@ function parseOutros(sections: CriterioSection[]) {
     if (PURINA_KEYWORDS.test(sec.nome)) continue; // ignora qualquer "outro" relacionado a Purina
 
     const body = sec.body;
-    const mCom = body.match(/Valor total da comiss[ãa]o:\s*(-?[\d\.]+,\d+)/);
-    if (!mCom) continue;
-    const comissao = parseBRL(mCom[1]);
-    if (comissao === 0 && !/-/.test(mCom[1])) {
-      // ignora 0,000 puros sem sinal — geralmente são linhas de cabeçalho
-      // mas linhas com comissão 0 e contexto também aparecem; mantém se descrição relevante
-    }
+    if (!/Valor total da comiss[ãa]o:/.test(body)) continue;
+    const comissao = extractComissaoTotal(body) ?? 0;
     vistos.add(sec.codigo);
 
     const isDemonstrativo = /SOMENTE DEMONSTRATIVO/i.test(body);
