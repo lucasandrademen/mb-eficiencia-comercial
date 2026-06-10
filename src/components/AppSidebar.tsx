@@ -19,6 +19,7 @@ import {
   Target,
   Zap,
   GitCompare,
+  Scale,
   BarChart3,
   BookOpen,
 } from "lucide-react";
@@ -32,6 +33,7 @@ type NavItem = {
 
 const nav: NavItem[] = [
   { to: "/", label: "Resumo Executivo", icon: LayoutDashboard, end: true },
+  { to: "/preser-folha", label: "PRESER × Folha", icon: Scale },
   { to: "/ranking", label: "Ranking", icon: Trophy },
   { to: "/faixas", label: "Faixas de Faturamento", icon: Layers },
   { to: "/matriz", label: "Matriz de Performance", icon: Grid3x3 },
