@@ -20,6 +20,7 @@ import {
   Zap,
   GitCompare,
   Scale,
+  Users,
   BarChart3,
   BookOpen,
 } from "lucide-react";
@@ -31,32 +32,54 @@ type NavItem = {
   end?: boolean;
 };
 
-const nav: NavItem[] = [
-  { to: "/", label: "Resumo Executivo", icon: LayoutDashboard, end: true },
-  { to: "/preser-folha", label: "PRESER × Folha", icon: Scale },
-  { to: "/ranking", label: "Ranking", icon: Trophy },
-  { to: "/faixas", label: "Faixas de Faturamento", icon: Layers },
-  { to: "/matriz", label: "Matriz de Performance", icon: Grid3x3 },
-  { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
-  { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
-  { to: "/upload", label: "Importação", icon: Upload },
-];
+type NavSection = { label: string | null; items: NavItem[] };
 
-const custosNav: NavItem[] = [
-  { to: "/custos-setor", label: "Custos por Setor", icon: Building2 },
-  { to: "/folha", label: "Folha de Pagamento", icon: Receipt },
-];
-
-const preserNav: NavItem[] = [
-  { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
-  { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
-  { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
-  { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
-  { to: "/preser/sku", label: "Análise por SKU", icon: Package },
-  { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
-  { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
-  { to: "/preser/regras", label: "Regras PRESER", icon: BookOpen },
-  { to: "/preser/importar", label: "Importar Extrato", icon: Upload },
+const sections: NavSection[] = [
+  {
+    label: null, // Visão geral — topo, sem rótulo
+    items: [
+      { to: "/", label: "Resumo Executivo", icon: LayoutDashboard, end: true },
+      { to: "/preser-folha", label: "PRESER × Folha", icon: Scale },
+    ],
+  },
+  {
+    label: "Equipe Comercial",
+    items: [
+      { to: "/equipe-gasto", label: "Equipe × Gasto", icon: Users },
+      { to: "/ranking", label: "Ranking", icon: Trophy },
+      { to: "/faixas", label: "Faixas de Faturamento", icon: Layers },
+      { to: "/matriz", label: "Matriz de Performance", icon: Grid3x3 },
+      { to: "/alertas", label: "Alertas e Exceções", icon: AlertTriangle },
+      { to: "/evolucao", label: "Evolução Mensal", icon: TrendingUp },
+    ],
+  },
+  {
+    label: "Custos & Folha",
+    items: [
+      { to: "/custos-setor", label: "Folha por Setor", icon: Building2 },
+      { to: "/folha", label: "Folha Detalhada", icon: Receipt },
+    ],
+  },
+  {
+    label: "Receita · PRESER",
+    items: [
+      { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
+      { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
+      { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
+      { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
+      { to: "/preser/sku", label: "Análise por SKU", icon: Package },
+      { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
+      { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
+      { to: "/preser/regras", label: "Regras PRESER", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Importação",
+    items: [
+      { to: "/upload", label: "Consolidado + Folha", icon: Upload },
+      { to: "/preser/importar", label: "Extrato PRESER", icon: Upload },
+    ],
+  },
 ];
 
 export function AppSidebar() {
@@ -85,91 +108,41 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-2 py-1 overflow-y-auto">
-        {nav.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
-                  collapsed ? "justify-center" : ""
-                } ${
-                  isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                }`
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </NavLink>
-          );
-        })}
-
-        {!collapsed && (
-          <div className="px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-            Custos & Folha
+        {sections.map((section, si) => (
+          <div key={section.label ?? si}>
+            {section.label &&
+              (!collapsed ? (
+                <div className="px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                  {section.label}
+                </div>
+              ) : (
+                <div className="my-2 border-t border-sidebar-border" />
+              ))}
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  title={collapsed ? item.label : undefined}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                      collapsed ? "justify-center" : ""
+                    } ${
+                      isActive
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    }`
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </NavLink>
+              );
+            })}
           </div>
-        )}
-        {collapsed && <div className="my-2 border-t border-sidebar-border" />}
-
-        {custosNav.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
-                  collapsed ? "justify-center" : ""
-                } ${
-                  isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                }`
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </NavLink>
-          );
-        })}
-
-        {!collapsed && (
-          <div className="px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-            Remuneração Broker
-          </div>
-        )}
-        {collapsed && <div className="my-2 border-t border-sidebar-border" />}
-
-        {preserNav.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              title={collapsed ? item.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
-                  collapsed ? "justify-center" : ""
-                } ${
-                  isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-card"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                }`
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </NavLink>
-          );
-        })}
+        ))}
       </nav>
 
       {/* Collapse toggle */}

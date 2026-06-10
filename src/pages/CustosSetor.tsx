@@ -5,6 +5,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -317,6 +320,53 @@ export default function CustosSetor() {
     [folhaEnriquecida],
   );
 
+  // ─── Evolução mensal da folha (todos os meses, ignora filtro de período) ──
+  const evolucaoFolha = useMemo(() => {
+    // Respeita o filtro de departamento, mas usa TODOS os meses importados
+    let base = dataset.folha ?? [];
+    if (filtroDept !== "all") {
+      base = base.filter((f) => {
+        const dept = (f.departamento || "—").toUpperCase();
+        const alvo = filtroDept.toUpperCase();
+        return dept === alvo || dept.startsWith(alvo + " ");
+      });
+    }
+    const byPer = new Map<
+      string,
+      { periodo: string; label: string; total: number; headcount: number; porDept: Record<string, number> }
+    >();
+    for (const f of base) {
+      let v = byPer.get(f.periodo);
+      if (!v) {
+        v = { periodo: f.periodo, label: periodoLabel(f.periodo), total: 0, headcount: 0, porDept: {} };
+        byPer.set(f.periodo, v);
+      }
+      const custo = f.bruto * (1 + ENCARGOS_PCT);
+      const dept = f.departamento || "—";
+      v.total += custo;
+      v.headcount += 1;
+      v.porDept[dept] = (v.porDept[dept] ?? 0) + custo;
+    }
+    const serie = [...byPer.values()]
+      .sort((a, b) => a.periodo.localeCompare(b.periodo))
+      .map((v) => ({
+        ...v,
+        ...v.porDept,
+        custoMedio: v.headcount > 0 ? v.total / v.headcount : 0,
+      }));
+    // Departamentos ordenados por custo total acumulado (para ordem do empilhamento)
+    const totalPorDept = new Map<string, number>();
+    for (const v of byPer.values()) {
+      for (const [d, c] of Object.entries(v.porDept)) {
+        totalPorDept.set(d, (totalPorDept.get(d) ?? 0) + c);
+      }
+    }
+    const deptsOrdenados = [...totalPorDept.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([d]) => d);
+    return { serie, deptsOrdenados };
+  }, [dataset.folha, filtroDept]);
+
   const onSort = (k: SortKey) => {
     if (sortKey === k) setDir(dir === "asc" ? "desc" : "asc");
     else {
@@ -336,7 +386,7 @@ export default function CustosSetor() {
     return (
       <>
         <PageHeader
-          title="Custos por Setor"
+          title="Folha por Setor"
           subtitle="Confronto entre folha de pagamento e faturamento gerado."
         />
         <EmptyState
@@ -350,7 +400,7 @@ export default function CustosSetor() {
   return (
     <>
       <PageHeader
-        title={filtroDept === "all" ? "Custos por Setor" : `Custos · ${filtroDept}`}
+        title={filtroDept === "all" ? "Folha por Setor" : `Folha · ${filtroDept}`}
         subtitle={
           <>
             Quanto cada setor custa sobre a comissão recebida{" "}
@@ -572,6 +622,117 @@ export default function CustosSetor() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Evolução mensal da folha ───────────────────────────────── */}
+      {evolucaoFolha.serie.length > 1 && (
+        <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                Evolução da folha por setor
+              </CardTitle>
+              <CardDescription>
+                Custo mensal (bruto + encargos) empilhado por departamento — todos os meses importados.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={evolucaoFolha.serie} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      tickFormatter={(v) => fmtBRL(v, { compact: true })}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      formatter={(v: number, name: string) => [fmtBRL(v), name]}
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {evolucaoFolha.deptsOrdenados.map((d, i) => (
+                      <Bar
+                        key={d}
+                        dataKey={d}
+                        stackId="folha"
+                        fill={CORES_DEPT[i % CORES_DEPT.length]}
+                        radius={
+                          i === evolucaoFolha.deptsOrdenados.length - 1 ? [4, 4, 0, 0] : undefined
+                        }
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-warning" />
+                Headcount × custo médio por pessoa
+              </CardTitle>
+              <CardDescription>
+                Quantas pessoas na folha e quanto cada uma custa em média (com encargos).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[280px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={evolucaoFolha.serie} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis
+                      yAxisId="hc"
+                      tickFormatter={(v) => fmtNum(v)}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis
+                      yAxisId="custo"
+                      orientation="right"
+                      tickFormatter={(v) => fmtBRL(v, { compact: true })}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      formatter={(v: number, name: string) =>
+                        name === "Headcount" ? [fmtNum(v), name] : [fmtBRL(v), name]
+                      }
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        fontSize: 12,
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar
+                      yAxisId="hc"
+                      dataKey="headcount"
+                      name="Headcount"
+                      fill="hsl(215 80% 48% / 0.35)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Line
+                      yAxisId="custo"
+                      type="monotone"
+                      dataKey="custoMedio"
+                      name="Custo médio / pessoa"
+                      stroke="hsl(38 92% 50%)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* ── Tabela por departamento ────────────────────────────────── */}
       <Card className="mb-5">
