@@ -1,5 +1,15 @@
 // ─── Bases de origem ───────────────────────────────────────────────────────
 
+/** Indicadores de uma força de venda (planilhas "Acompanhamento 2026"). */
+export interface ForcaVendedor {
+  vbc: number;
+  vbc_objetivo?: number;
+  cobertura?: number;
+  cobertura_objetivo?: number;
+  positivacao?: number; // 0–1
+  comissao: number; // PRESER pago ao vendedor por essa força
+}
+
 export interface BaseVendedor {
   periodo: string; // "YYYY-MM"
   vendedor_id: string;
@@ -7,6 +17,10 @@ export interface BaseVendedor {
   supervisor?: string;
   faturamento: number;
   custo: number;
+  /** Detalhe por força de venda (opcional; vem do Acompanhamento anual). */
+  forcas?: Partial<Record<"nestle" | "garoto" | "npro", ForcaVendedor>>;
+  /** PRESER pago ao vendedor somando as forças. */
+  comissao_preser?: number;
 }
 
 export interface BaseCarteira {
