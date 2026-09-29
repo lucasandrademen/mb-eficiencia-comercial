@@ -99,21 +99,30 @@ export async function exportarBackup(): Promise<BackupFile> {
   };
 }
 
-/** Restaura um backup: substitui TUDO que está no banco local. */
-export async function importarBackup(b: BackupFile): Promise<void> {
+/**
+ * Restaura um backup JUNTANDO com o que já existe (nunca apaga):
+ * - PRESER: cada mês do arquivo substitui o mesmo mês no app; meses que não
+ *   estão no arquivo continuam.
+ * - Demais dados (Folha, DRO, vendedores): só as chaves presentes no arquivo
+ *   são gravadas.
+ * Retorna quantos meses entraram/foram atualizados.
+ */
+export async function importarBackup(b: BackupFile): Promise<{ meses: number; kv: number }> {
   if (b?.app !== "mb-eficiencia-comercial" || !Array.isArray(b.preser)) {
     throw new Error("Arquivo não é um backup deste app.");
   }
+  const existentes = await preserAll();
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(["kv", "preser"], "readwrite");
     const kv = tx.objectStore("kv");
     const pr = tx.objectStore("preser");
-    kv.clear();
-    pr.clear();
+    const periodos = new Set(b.preser.map((e) => e.extrato.periodo));
+    for (const e of existentes) if (periodos.has(e.extrato.periodo)) pr.delete(e.extrato.id);
     for (const [k, v] of Object.entries(b.kv ?? {})) kv.put(v, k);
     for (const e of b.preser) pr.put(e, e.extrato.id);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+  return { meses: b.preser.length, kv: Object.keys(b.kv ?? {}).length };
 }

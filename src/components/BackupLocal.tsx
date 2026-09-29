@@ -11,17 +11,21 @@ export function BackupLocal({ collapsed }: { collapsed: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  const salvarArquivo = (b: BackupFile, sufixo = "") => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(b)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup-eficiencia-comercial-${b.geradoEm.slice(0, 16).replace(/[T:]/g, "-")}${sufixo}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const baixar = async () => {
     setOcupado(true);
     try {
       const b = await exportarBackup();
-      const url = URL.createObjectURL(new Blob([JSON.stringify(b)], { type: "application/json" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `backup-eficiencia-comercial-${b.geradoEm.slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`Backup salvo (${b.preser.length} meses PRESER).`);
+      salvarArquivo(b);
+      toast.success(`Backup salvo (${b.preser.length} meses PRESER${Object.keys(b.kv).length ? " + Folha/DRO" : ""}).`);
     } catch (err) {
       toast.error(`Erro ao gerar backup: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -30,12 +34,31 @@ export function BackupLocal({ collapsed }: { collapsed: boolean }) {
   };
 
   const restaurar = async (f: File) => {
-    if (!confirm("Restaurar este backup vai SUBSTITUIR todos os dados atuais deste computador. Continuar?")) return;
+    let b: BackupFile;
+    try {
+      b = JSON.parse(await f.text()) as BackupFile;
+    } catch {
+      toast.error("Arquivo inválido.");
+      return;
+    }
+    const meses = (b.preser ?? []).map((e) => e.extrato.periodo.slice(0, 7)).sort();
+    const faixa = meses.length ? `${meses[0]} a ${meses[meses.length - 1]}` : "nenhum mês";
+    if (
+      !confirm(
+        `Este backup tem ${meses.length} mês(es) do PRESER (${faixa})` +
+          `${Object.keys(b.kv ?? {}).length ? " e dados de Folha/DRO" : ""}.\n\n` +
+          "Os dados dele serão JUNTADOS aos do app: meses iguais são atualizados, os demais continuam. " +
+          "Antes, uma cópia do que está no app será baixada. Continuar?",
+      )
+    )
+      return;
     setOcupado(true);
     try {
-      await importarBackup(JSON.parse(await f.text()) as BackupFile);
-      toast.success("Backup restaurado. Recarregando…");
-      setTimeout(() => location.reload(), 600);
+      // cópia de segurança do estado atual, antes de mexer
+      salvarArquivo(await exportarBackup(), "-antes-de-restaurar");
+      const r = await importarBackup(b);
+      toast.success(`Backup restaurado (${r.meses} meses). Recarregando…`);
+      setTimeout(() => location.reload(), 900);
     } catch (err) {
       toast.error(`Erro ao restaurar: ${err instanceof Error ? err.message : String(err)}`);
       setOcupado(false);
