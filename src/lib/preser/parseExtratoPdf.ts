@@ -110,7 +110,8 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   // Ver src/lib/preser/ciclo.ts.
   // Formato A: "Apuração: 2026/4"   (ano/mês logo após o rótulo)
   // Formato B: "Mês Ano  4 2026  / Apuração:"  (valores antes do rótulo)
-  const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
+  // (o PDF traz espaços antes da barra: "Apuração:   2026   / 7")
+  const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\s*\/\s*(\d{1,2})/);
   const mB = allText.match(/M[êe]s\s+Ano\s+(\d{1,2})\s+(\d{4})\s*\/\s*Apura[çc][ãa]o/i);
 
   let ano: number | null = null;
