@@ -68,15 +68,12 @@ function faixaMeta(m: PreserMeta | undefined): { txt: string; pct: number | null
   if (!m) return { txt: "sem meta", pct: null };
   const ef = m.efetivo_fiscal ?? 0;
   if (m.tipo === "Recomendador") return { txt: pctTxt(ef), pct: ef };
-  const min = m.objetivo_minimo ?? 0;
   const meta = m.objetivo_meta ?? 0;
-  const ideal = m.objetivo_ideal ?? 0;
   const pct = meta > 0 ? ef / meta : null;
-  let faixa = "abaixo do mínimo";
-  if (ideal > 0 && ef >= ideal) faixa = "faixa Ideal";
-  else if (meta > 0 && ef >= meta) faixa = "faixa Meta";
-  else if (min > 0 && ef >= min) faixa = "faixa Mínimo";
-  return { txt: `${pct != null ? pctTxt(pct) : "—"} (${faixa})`, pct };
+  // Faixa pela taxa paga no extrato (0,35% mínimo · 0,50% meta · 0,65% ideal)
+  const taxa = m.pct_atingido ?? 0;
+  const faixa = !taxa || !(m.comissao ?? 0) ? "não pagou" : `taxa ${fmtPct(taxa, 2)}`;
+  return { txt: `${pct != null ? pctTxt(pct) : "—"} da meta (${faixa})`, pct };
 }
 
 // ─── Montagem dos itens ───────────────────────────────────────────────────
