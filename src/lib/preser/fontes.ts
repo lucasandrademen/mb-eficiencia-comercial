@@ -14,7 +14,24 @@ export const FONTES = [
 
 export type FonteKey = (typeof FONTES)[number]["key"];
 
-export function somarFontes(e: PreserExtratoCompleto): Record<FonteKey, number> {
+/** Fonte de uma linha "outros" pelo código do critério. */
+export function fonteDoOutro(cod: number | null): FonteKey {
+  const c = cod ?? 0;
+  if (c === 22 || c === 23 || c === 24 || c === 25) return "transporte";
+  if (c === 21) return "garantia";
+  if (c === 17 || c === 19 || c === 65 || c === 94) return "visitas";
+  if (c === 98 || c === 101 || c === 108) return "seguros";
+  return "pontuais";
+}
+
+/**
+ * Soma por fonte. Com `soContabilizado`, ignora linhas fora do total do extrato
+ * (ex.: Entrega NiM paga via CT-e) — aí a soma fecha com valor_total_comissao.
+ */
+export function somarFontes(
+  e: PreserExtratoCompleto,
+  { soContabilizado = false }: { soContabilizado?: boolean } = {},
+): Record<FonteKey, number> {
   const soma = <T extends { comissao: number | null }>(rs: T[]) =>
     rs.reduce((s, r) => s + (r.comissao ?? 0), 0);
   const out: Record<FonteKey, number> = {
@@ -28,13 +45,8 @@ export function somarFontes(e: PreserExtratoCompleto): Record<FonteKey, number> 
     pontuais: 0,
   };
   for (const o of e.outros) {
-    const cod = o.criterio_codigo ?? 0;
-    const com = o.comissao ?? 0;
-    if (cod === 22 || cod === 23 || cod === 24 || cod === 25) out.transporte += com;
-    else if (cod === 21) out.garantia += com;
-    else if (cod === 17 || cod === 19 || cod === 65 || cod === 94) out.visitas += com;
-    else if (cod === 98 || cod === 101 || cod === 108) out.seguros += com;
-    else out.pontuais += com;
+    if (soContabilizado && o.contabilizado === false) continue;
+    out[fonteDoOutro(o.criterio_codigo)] += o.comissao ?? 0;
   }
   return out;
 }

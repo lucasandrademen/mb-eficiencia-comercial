@@ -502,20 +502,96 @@ function parseOutros(sections: CriterioSection[]) {
         ? linhas[1].slice(0, 200) // descrição textual logo após "Critério: X..."
         : null;
 
+    const base = extrairBase(linhas);
+
     out.push({
       criterio_codigo: sec.codigo,
       criterio_nome: sec.nome.slice(0, 200),
       tipo_servico,
       bu: null,
-      base_calculo: null,
-      base_unidade: null,
-      rs_unitario: null,
+      base_calculo: base?.base ?? null,
+      base_unidade: base?.unidade ?? null,
+      rs_unitario: base?.rs ?? null,
       comissao,
-      observacao,
+      observacao: base?.obs ?? observacao,
       contabilizado: !isDemonstrativo,
     });
   }
   return out;
+}
+
+const NUM_BR = /^-?[\d.]+,\d+$/;
+const INT_BR = /^\d[\d.]*$/;
+const toInt = (t: string) => parseInt(t.replace(/\./g, ""), 10);
+
+/**
+ * Base de cálculo de um critério "outros", lida das linhas do corpo:
+ * faturamento (Garantia/Seguro), peso (Entrega), pallets (Armazenagem/Refrigerado),
+ * visitas (Farma/PAC/RiV/Prospectores) e merchandisers. null se não reconhecer.
+ */
+function extrairBase(
+  linhas: string[],
+): { base: number; unidade: string; rs: number | null; obs?: string } | null {
+  const txt = linhas.join("\n");
+
+  // Garantia de crédito / Seguros: "Efetivo Mês (R$) 13.352.990,400 % de Garantia 0,600%"
+  // (alguns meses trazem os rótulos numa linha e os valores na seguinte)
+  const mEf =
+    txt.match(/Efetivo M[êe]s \(R\$\)\s*([\d.]+,\d+)\s*%\s*de\s*\w+\s*([\d.]+,\d+)%/) ??
+    txt.match(/Efetivo M[êe]s \(R\$\)\s*%\s*de\s*\w+\s*\n\s*([\d.]+,\d+)\s+([\d.]+,\d+)%/);
+  if (mEf) return { base: parseBRL(mEf[1]), unidade: "R$", rs: parseBRL(mEf[2]) / 100 };
+
+  // Entrega: "Peso Bruto 411.051,244 R$/Kg: 0,524"
+  const mPeso =
+    txt.match(/Peso Bruto\s*([\d.]+,\d+)\s*R\$\/Kg:?\s*([\d.]+,\d+)/i) ??
+    txt.match(/Peso Bruto\s*R\$\/Kg:?\s*\n\s*([\d.]+,\d+)\s+([\d.]+,\d+)/i);
+  if (mPeso) return { base: parseBRL(mPeso[1]), unidade: "kg", rs: parseBRL(mPeso[2]) };
+
+  const iHead = linhas.findIndex((l) => /Pallets/.test(l) && /Calc\.\s*Comiss/.test(l));
+  if (iHead >= 0) {
+    // Linhas de pallets: "89,430% 250 666,140 ..." (Armazenagem) ou "45 98,060 ..." (Refrigerado)
+    let pallets = 0;
+    for (const l of linhas.slice(iHead + 1)) {
+      if (/^(Valor total|\*|Crit)/.test(l)) break;
+      const t = l.split(" ");
+      if (t.length < 4 || !NUM_BR.test(t[t.length - 1])) continue;
+      const q = /%$/.test(t[0]) ? t[1] : t[0];
+      if (INT_BR.test(q)) pallets += toInt(q);
+    }
+    if (pallets > 0) return { base: pallets, unidade: "pallets", rs: null };
+  }
+
+  const iVis = linhas.findIndex((l) => /Canal\s+Objetivo\s+Efetivo/.test(l));
+  if (iVis >= 0) {
+    // "11 - Farma Curva B 16 16 100,000% ..." → objetivo, efetivo
+    let obj = 0;
+    let ef = 0;
+    for (const l of linhas.slice(iVis + 1)) {
+      if (/^(Valor total|\*|Crit)/.test(l)) break;
+      const m = l.match(/^\d+\s*-\s*.+?\s(\d[\d.]*)\s+(\d[\d.]*)\s+[\d.]+,\d+%/);
+      if (m) {
+        obj += toInt(m[1]);
+        ef += toInt(m[2]);
+      }
+    }
+    if (obj || ef) return { base: ef, unidade: "visitas", rs: null, obs: `Objetivo ${obj} visitas · efetivo ${ef}` };
+  }
+
+  // Merchandising: "28 28 5.157,510 144.410,280 1 1 13.027,390 13.027,390" (Qtd. Max, Qtd. Cons., …)
+  const iMer = linhas.findIndex((l) => /Qtd\.\s*Max/.test(l) && /Total Pago/.test(l));
+  if (iMer >= 0 && linhas[iMer + 1]) {
+    let cons = 0;
+    const t = linhas[iMer + 1].split(" ");
+    if (INT_BR.test(t[0])) {
+      for (let i = 0; i + 3 < t.length; i += 4) if (INT_BR.test(t[i + 1])) cons += toInt(t[i + 1]);
+    } else if (linhas[iMer + 2]) {
+      // valores numa linha e quantidades na seguinte: "24 24 1 1" (Max, Cons, Max, Cons)
+      const q = linhas[iMer + 2].split(" ");
+      for (let i = 1; i < q.length; i += 2) if (INT_BR.test(q[i])) cons += toInt(q[i]);
+    }
+    if (cons > 0) return { base: cons, unidade: "pessoas", rs: null };
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
