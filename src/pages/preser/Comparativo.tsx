@@ -18,6 +18,7 @@ import { usePreserData } from "@/contexts/PreserDataContext";
 import { listExtratosCompletos } from "@/lib/preser/api";
 import { cicloPreser } from "@/lib/preser/ciclo";
 import { FONTES, fonteDoOutro, somarFontes, type FonteKey } from "@/lib/preser/fontes";
+import { grupoCanonico, nomesAntigos } from "@/lib/preser/renomeados";
 import {
   CATEGORIA_NOMES,
   type PreserCategoriaCodigo,
@@ -124,14 +125,23 @@ function montarItens(A: PreserExtratoCompleto, B: PreserExtratoCompleto): Item[]
   cruzar(
     A.skus,
     B.skus,
-    (s) => ({
-      key: `sku|${s.grupo_codigo}|${s.categoria}`,
+    (s) => {
+      // grupos renomeados pela Nestlé somam no nome atual (ex.: Nescafé 40G → Nescafé Sachet)
+      const nome = grupoCanonico(s.grupo_nome);
+      const antigos = nomesAntigos(nome);
+      const cat = s.categoria_nome ?? CATEGORIA_NOMES[s.categoria as PreserCategoriaCodigo] ?? s.categoria;
+      return {
+      // chave só pelo nome: o grupo renomeado pode ter mudado de categoria (ex.: Estratégico → Mix Pilar)
+      key: `sku|${nome}`,
       fonte: "vendas",
-      nome: s.grupo_nome,
-      detalhe: `${s.divisao ?? "—"} · ${s.categoria_nome ?? CATEGORIA_NOMES[s.categoria as PreserCategoriaCodigo] ?? s.categoria}`,
+      nome,
+      detalhe: antigos.length
+        ? `${s.divisao ?? "—"} · inclui ${antigos.join(", ")} (nome anterior)`
+        : `${s.divisao ?? "—"} · ${cat}`,
       noTotal: true,
       com: s.comissao ?? 0,
-    }),
+      };
+    },
     (a, b) => {
       const efA = a.reduce((s, r) => s + (r.efetivo_total ?? 0), 0);
       const efB = b.reduce((s, r) => s + (r.efetivo_total ?? 0), 0);
