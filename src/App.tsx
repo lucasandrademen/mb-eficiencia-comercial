@@ -25,6 +25,7 @@ const PreserCanais = lazy(() => import("./pages/preser/Canais"));
 const PreserMetas = lazy(() => import("./pages/preser/Metas"));
 const PreserOportunidades = lazy(() => import("./pages/preser/Oportunidades"));
 const PreserComparativo = lazy(() => import("./pages/preser/Comparativo"));
+const PreserAnual = lazy(() => import("./pages/preser/Anual"));
 const PreserDetalhada = lazy(() => import("./pages/preser/Detalhada"));
 const PreserRegras = lazy(() => import("./pages/preser/Regras"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/preser/metas" element={<PreserMetas />} />
             <Route path="/preser/oportunidades" element={<PreserOportunidades />} />
             <Route path="/preser/comparativo" element={<PreserComparativo />} />
+            <Route path="/preser/anual" element={<PreserAnual />} />
             <Route path="/preser/detalhada" element={<PreserDetalhada />} />
             <Route path="/preser/regras" element={<PreserRegras />} />
           </Route>

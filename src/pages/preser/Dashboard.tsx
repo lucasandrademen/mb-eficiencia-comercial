@@ -32,6 +32,7 @@ import {
 import { PageHeader } from "@/components/PageHeader";
 import { CicloPreserInfo } from "@/components/preser/CicloPreserInfo";
 import { cicloPreser } from "@/lib/preser/ciclo";
+import { somarFontes } from "@/lib/preser/fontes";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,26 +73,8 @@ export default function PreserDashboard() {
   // ─── Fontes de receita: de onde vem cada R$ da comissão ─────────
   const fontesReceita = useMemo(() => {
     if (!atual) return [];
-    const skus = atual.skus.reduce((s, r) => s + (r.comissao ?? 0), 0);
-    const drops = atual.drops.reduce((s, r) => s + (r.comissao ?? 0), 0);
-    const metas = atual.metas.reduce((s, r) => s + (r.comissao ?? 0), 0);
-
-    // Categoriza os "outros" em sub-fontes
-    let transporte = 0; // Armazenagem + Refrigerado + Entrega + Op Logística
-    let garantia = 0; // Garantia de Crédito
-    let visitas = 0; // Visitas Farma/PAC/Mercha
-    let seguros = 0; // RC-DC, Seguro Patrimonial
-    let outrosBonus = 0; // Ressarcimentos, bônus pontuais
-
-    for (const o of atual.outros) {
-      const cod = o.criterio_codigo ?? 0;
-      const com = o.comissao ?? 0;
-      if (cod === 22 || cod === 23 || cod === 24 || cod === 25) transporte += com;
-      else if (cod === 21) garantia += com;
-      else if (cod === 17 || cod === 19 || cod === 65 || cod === 94) visitas += com;
-      else if (cod === 98 || cod === 101 || cod === 108) seguros += com;
-      else outrosBonus += com;
-    }
+    const { vendas: skus, drops, metas, transporte, garantia, visitas, seguros, pontuais: outrosBonus } =
+      somarFontes(atual);
 
     return [
       { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(197 99% 28%)", desc: "SKUs (Crit. 1)" },

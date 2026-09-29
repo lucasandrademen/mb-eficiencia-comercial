@@ -24,6 +24,7 @@ import {
   Users,
   BarChart3,
   BookOpen,
+  CalendarRange,
 } from "lucide-react";
 
 type NavItem = {
@@ -69,6 +70,7 @@ const sections: NavSection[] = [
     items: [
       { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
       { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
+      { to: "/preser/anual", label: "Comparativo 2025 × 2026", icon: CalendarRange },
       { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
       { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
       { to: "/preser/sku", label: "Análise por SKU", icon: Package },

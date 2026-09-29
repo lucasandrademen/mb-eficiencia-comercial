@@ -25,6 +25,11 @@ async function todos(): Promise<PreserExtratoCompleto[]> {
 const porPeriodoDesc = (a: PreserExtratoCompleto, b: PreserExtratoCompleto) =>
   a.extrato.periodo < b.extrato.periodo ? 1 : a.extrato.periodo > b.extrato.periodo ? -1 : 0;
 
+/** Todos os extratos completos, do mais antigo para o mais recente. */
+export async function listExtratosCompletos(): Promise<PreserExtratoCompleto[]> {
+  return (await todos()).slice().sort(porPeriodoDesc).reverse();
+}
+
 export async function listExtratos(): Promise<PreserExtrato[]> {
   return (await todos()).slice().sort(porPeriodoDesc).map((e) => e.extrato);
 }
