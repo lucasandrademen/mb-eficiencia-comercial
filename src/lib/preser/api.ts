@@ -1,114 +1,66 @@
-import { getSupabase } from "./supabase";
-import type {
-  PreserExtrato,
-  PreserSku,
-  PreserDrops,
-  PreserMeta,
-  PreserOutro,
-  PreserExtratoCompleto,
-} from "./types";
+/**
+ * PRESER — leitura/escrita no banco LOCAL (IndexedDB, ver src/lib/localDb.ts).
+ * Mantém as mesmas assinaturas da antiga versão Supabase.
+ */
+import { preserAll, preserDelete } from "@/lib/localDb";
+import type { PreserExtrato, PreserExtratoCompleto, PreserMeta } from "./types";
 
-export async function listExtratos(): Promise<PreserExtrato[]> {
-  const sb = getSupabase();
-  if (!sb) return [];
-  const { data, error } = await sb
-    .from("preser_extrato")
-    .select("*")
-    .order("periodo", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as PreserExtrato[];
+/** Cache em memória: o IndexedDB é lido uma vez por carregamento de página. */
+let cache: Promise<PreserExtratoCompleto[]> | null = null;
+
+export function invalidatePreserCache() {
+  cache = null;
 }
 
-/** Apaga um extrato (mês) e todas as suas linhas-filhas nas 5 tabelas */
+async function todos(): Promise<PreserExtratoCompleto[]> {
+  if (!cache) {
+    cache = preserAll().catch((e) => {
+      cache = null;
+      throw e;
+    });
+  }
+  return cache;
+}
+
+const porPeriodoDesc = (a: PreserExtratoCompleto, b: PreserExtratoCompleto) =>
+  a.extrato.periodo < b.extrato.periodo ? 1 : a.extrato.periodo > b.extrato.periodo ? -1 : 0;
+
+export async function listExtratos(): Promise<PreserExtrato[]> {
+  return (await todos()).slice().sort(porPeriodoDesc).map((e) => e.extrato);
+}
+
+/** Apaga um extrato (mês) e todas as suas linhas */
 export async function deletePreserExtrato(id: string): Promise<void> {
-  const sb = getSupabase();
-  if (!sb) throw new Error("Supabase não configurado");
-
-  await Promise.all([
-    sb.from("preser_sku").delete().eq("extrato_id", id),
-    sb.from("preser_drops").delete().eq("extrato_id", id),
-    sb.from("preser_metas").delete().eq("extrato_id", id),
-    sb.from("preser_outros").delete().eq("extrato_id", id),
-  ]);
-
-  const { error } = await sb.from("preser_extrato").delete().eq("id", id);
-  if (error) throw error;
+  await preserDelete(id);
+  invalidatePreserCache();
 }
 
 export async function getExtratoPorId(id: string): Promise<PreserExtratoCompleto | null> {
-  const sb = getSupabase();
-  if (!sb) return null;
-
-  const { data: extrato, error } = await sb
-    .from("preser_extrato")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error || !extrato) return null;
-
-  const [skus, drops, metas, outros] = await Promise.all([
-    sb.from("preser_sku").select("*").eq("extrato_id", id),
-    sb.from("preser_drops").select("*").eq("extrato_id", id),
-    sb.from("preser_metas").select("*").eq("extrato_id", id),
-    sb.from("preser_outros").select("*").eq("extrato_id", id),
-  ]);
-
-  return {
-    extrato: extrato as PreserExtrato,
-    skus: (skus.data ?? []) as PreserSku[],
-    drops: (drops.data ?? []) as PreserDrops[],
-    metas: (metas.data ?? []) as PreserMeta[],
-    outros: (outros.data ?? []) as PreserOutro[],
-  };
+  return (await todos()).find((e) => e.extrato.id === id) ?? null;
 }
 
 export async function getExtratoMaisRecente(): Promise<PreserExtratoCompleto | null> {
-  const sb = getSupabase();
-  if (!sb) return null;
-  const { data } = await sb
-    .from("preser_extrato")
-    .select("id")
-    .order("periodo", { ascending: false })
-    .limit(1);
-  const id = (data ?? [])[0]?.id as string | undefined;
-  if (!id) return null;
-  return getExtratoPorId(id);
+  return (await todos()).slice().sort(porPeriodoDesc)[0] ?? null;
 }
 
 /** Série temporal agregada: uma linha por extrato */
 export async function getSerieTemporalBroker(): Promise<
   { periodo: string; comissao: number; faturamento_ac: number; pct: number }[]
 > {
-  const sb = getSupabase();
-  if (!sb) return [];
-  const { data, error } = await sb
-    .from("preser_extrato")
-    .select("periodo, valor_total_comissao, faturamento_ac, pct_remuneracao_sobre_fat")
-    .order("periodo", { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((r: Record<string, unknown>) => ({
-    periodo: (r.periodo as string).slice(0, 7),
-    comissao: (r.valor_total_comissao as number) ?? 0,
-    faturamento_ac: (r.faturamento_ac as number) ?? 0,
-    pct: (r.pct_remuneracao_sobre_fat as number) ?? 0,
-  }));
+  return (await todos())
+    .slice()
+    .sort(porPeriodoDesc)
+    .reverse()
+    .map(({ extrato: r }) => ({
+      periodo: r.periodo.slice(0, 7),
+      comissao: r.valor_total_comissao ?? 0,
+      faturamento_ac: r.faturamento_ac ?? 0,
+      pct: r.pct_remuneracao_sobre_fat ?? 0,
+    }));
 }
 
 /** Para o bar chart de atingimento por BU no mês atual */
 export async function getMetasDoMesRecente(): Promise<PreserMeta[]> {
-  const sb = getSupabase();
-  if (!sb) return [];
-  const { data: extratos } = await sb
-    .from("preser_extrato")
-    .select("id")
-    .order("periodo", { ascending: false })
-    .limit(1);
-  const id = (extratos ?? [])[0]?.id as string | undefined;
-  if (!id) return [];
-  const { data } = await sb
-    .from("preser_metas")
-    .select("*")
-    .eq("extrato_id", id)
-    .in("tipo", ["VBC", "Cobertura"]);
-  return (data ?? []) as PreserMeta[];
+  const e = await getExtratoMaisRecente();
+  return (e?.metas ?? []).filter((m) => m.tipo === "VBC" || m.tipo === "Cobertura");
 }

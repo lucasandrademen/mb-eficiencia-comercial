@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TBody, THead, Td, Th, Tr } from "@/components/ui/table";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
-import { ENCARGOS_PCT } from "@/lib/calculations";
+import { encargosFolha } from "@/lib/calculations";
 import { BaseFolha } from "@/lib/types";
 
 export default function Folha() {
@@ -26,7 +26,7 @@ export default function Folha() {
     const bruto = rows.reduce((s, r) => s + r.bruto, 0);
     const descontos = rows.reduce((s, r) => s + r.descontos, 0);
     const liquido = rows.reduce((s, r) => s + r.liquido, 0);
-    const encargos = bruto * ENCARGOS_PCT;
+    const encargos = rows.reduce((s, r) => s + encargosFolha(r), 0);
     const custoTotal = bruto + encargos;
     return {
       bruto,
@@ -109,7 +109,7 @@ export default function Folha() {
         <MetricCard
           title="Encargos patronais"
           value={fmtBRL(totals.encargos, { compact: true })}
-          subtitle={`${fmtPct(ENCARGOS_PCT)} sobre o bruto`}
+          subtitle={`${fmtPct(totals.bruto > 0 ? totals.encargos / totals.bruto : 0)} sobre o bruto`}
           icon={TrendingDown}
           variant="warning"
         />
@@ -222,7 +222,7 @@ export default function Folha() {
 }
 
 function LinhaFolha({ r }: { r: BaseFolha }) {
-  const encargos = r.bruto * ENCARGOS_PCT;
+  const encargos = encargosFolha(r);
   const custoReal = r.bruto + encargos;
   return (
     <Tr>

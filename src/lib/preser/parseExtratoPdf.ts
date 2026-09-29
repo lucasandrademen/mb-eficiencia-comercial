@@ -104,10 +104,10 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const allText = normalizeCriterioInvertido(pages.flatMap((p) => p.lines).join("\n"));
 
   // ── 2.1 Cabeçalho: período ─────────────────────────────────────────────
-  // "Apuração: YYYY/M" no PDF refere-se ao CICLO que FECHA dia 19 do mês M.
-  // O ciclo PRESER é "mês M-1 dia 20" até "mês M dia 19", então a atividade
-  // comercial é do mês M-1. Ex: Apuração 2026/4 = ciclo Mar/20 a Abr/19 =
-  // atividade de MARÇO. Salvamos como mês M-1.
+  // "Apuração: YYYY/M" no PDF = MÊS DO PRESER (é assim que o extrato é salvo).
+  // Ciclo: faturamento de 20/(M-1) a 19/M; bônus de metas = metas do mês M-1.
+  // Ex: Apuração 2026/9 = PRESER de Setembro (fat. 20/08–19/09, metas de Agosto).
+  // Ver src/lib/preser/ciclo.ts.
   // Formato A: "Apuração: 2026/4"   (ano/mês logo após o rótulo)
   // Formato B: "Mês Ano  4 2026  / Apuração:"  (valores antes do rótulo)
   const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
@@ -123,16 +123,10 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
     ano = parseInt(mB[2], 10);
   }
 
-  // Recua 1 mês (com virada de ano se preciso) — atividade comercial é M-1.
   // Se o parser NÃO detectar o período, deixa vazio para o usuário escolher
   // no seletor de mês (antes isto chutava 2025-12 e gerava dados errados).
   let periodo = "";
-  if (ano !== null && mesNum !== null) {
-    mesNum -= 1;
-    if (mesNum <= 0) {
-      mesNum = 12;
-      ano -= 1;
-    }
+  if (ano !== null && mesNum !== null && mesNum >= 1 && mesNum <= 12) {
     periodo = `${ano}-${String(mesNum).padStart(2, "0")}-01`;
   }
 

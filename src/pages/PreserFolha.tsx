@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
-import { ENCARGOS_PCT } from "@/lib/calculations";
+import { custoFolha } from "@/lib/calculations";
 import { listExtratos } from "@/lib/preser/api";
 import type { PreserExtrato } from "@/lib/preser/types";
 import { cn } from "@/lib/utils";
@@ -126,7 +126,7 @@ export default function PreserFolha() {
 
     for (const f of dataset.folha ?? []) {
       const v = get(f.periodo);
-      const custo = f.bruto * (1 + ENCARGOS_PCT);
+      const custo = custoFolha(f);
       const eComercial =
         idsComerciais.codigos.has(f.codigo) || idsComerciais.nomes.has(normaliza(f.nome));
       if (eComercial) v.folhaComercial += custo;
@@ -177,7 +177,7 @@ export default function PreserFolha() {
       <>
         <PageHeader
           title="PRESER × Folha"
-          subtitle="Resultado real da operação: comissão recebida menos folha completa."
+          subtitle="Comissão PRESER recebida menos folha completa (a receita da MB está no DRO)."
         />
         <EmptyState
           title="Faltam dados"
@@ -193,8 +193,8 @@ export default function PreserFolha() {
         title="PRESER × Folha"
         subtitle={
           <>
-            Resultado real da operação — <strong>comissão líquida de impostos</strong> menos{" "}
-            <strong>folha completa com encargos</strong>.
+            Comissão PRESER × folha — <strong>comissão líquida de impostos</strong> menos{" "}
+            <strong>folha completa com encargos</strong>. A receita da MB está no DRO.
           </>
         }
         actions={<PeriodoFilter />}
@@ -244,12 +244,12 @@ export default function PreserFolha() {
           variant="destructive"
         />
         <MetricCard
-          title="Resultado Real"
+          title="Comissão − Folha"
           value={kpis.semPreser || kpis.semFolha ? "—" : fmtBRL(kpis.resultado, { compact: true })}
           subtitle={
             kpis.semPreser || kpis.semFolha
               ? "Importe PRESER e folha do período"
-              : "Receita líquida − folha completa"
+              : "Comissão líquida − folha completa"
           }
           icon={Scale}
           variant={
@@ -302,8 +302,8 @@ export default function PreserFolha() {
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar
                       dataKey="receitaLiquida"
-                      name="Receita líquida"
-                      fill="hsl(215 80% 48%)"
+                      name="Comissão líquida"
+                      fill="hsl(197 99% 28%)"
                       radius={[4, 4, 0, 0]}
                     />
                     <Bar
@@ -414,7 +414,7 @@ export default function PreserFolha() {
                     dataKey="folhaComercial"
                     name="Equipe comercial"
                     stackId="folha"
-                    fill="hsl(215 80% 48%)"
+                    fill="hsl(197 99% 28%)"
                   />
                   <Bar
                     dataKey="folhaSuporte"
@@ -438,7 +438,7 @@ export default function PreserFolha() {
             DRE simplificado mês a mês
           </CardTitle>
           <CardDescription>
-            Receita PRESER líquida de impostos, folha completa (bruto × {fmtNum(1 + ENCARGOS_PCT, 4)}) e resultado.
+            Receita PRESER líquida de impostos, folha completa (bruto + encargos reais da folha) e resultado.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -446,7 +446,7 @@ export default function PreserFolha() {
             <THead>
               <Tr>
                 <Th>Mês</Th>
-                <Th className="text-right">Receita líquida</Th>
+                <Th className="text-right">Comissão líquida</Th>
                 <Th className="text-right">Folha comercial</Th>
                 <Th className="text-right">Folha estrutura</Th>
                 <Th className="text-right">Folha total</Th>
@@ -516,7 +516,7 @@ export default function PreserFolha() {
                 Total {periodosSelecionados.length === 0 ? "(todos os meses)" : "(escopo)"}
               </span>
               <div className="flex items-center gap-6 text-right text-xs">
-                <span>Receita: <strong>{fmtBRL(kpis.receitaLiquida)}</strong></span>
+                <span>Comissão: <strong>{fmtBRL(kpis.receitaLiquida)}</strong></span>
                 <span>Folha: <strong className="text-destructive">{fmtBRL(kpis.folhaTotal)}</strong></span>
                 <span
                   className={cn("font-bold", kpis.resultado >= 0 ? "text-success" : "text-destructive")}
@@ -541,7 +541,7 @@ function DreTooltip({ active, payload, label }: any) {
     <div className="rounded-lg border border-border bg-card p-3 text-xs shadow-elevated">
       <div className="mb-2 font-semibold">{label}</div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-        <span className="text-muted-foreground">Receita líquida:</span>
+        <span className="text-muted-foreground">Comissão líquida:</span>
         <span className="text-right font-medium">{d.temPreser ? fmtBRL(d.receitaLiquida) : "sem PRESER"}</span>
         <span className="text-muted-foreground">Folha total:</span>
         <span className="text-right font-medium">{d.temFolha ? fmtBRL(d.folhaTotal) : "sem folha"}</span>

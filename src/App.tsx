@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 
+const PainelOperacional = lazy(() => import("./pages/PainelOperacional"));
 const Resumo = lazy(() => import("./pages/Resumo"));
 const UploadPage = lazy(() => import("./pages/Upload"));
 const Ranking = lazy(() => import("./pages/Ranking"));
@@ -12,6 +13,8 @@ const Alertas = lazy(() => import("./pages/Alertas"));
 const Evolucao = lazy(() => import("./pages/Evolucao"));
 const Folha = lazy(() => import("./pages/Folha"));
 const CustosSetor = lazy(() => import("./pages/CustosSetor"));
+const FolhaColaborador = lazy(() => import("./pages/FolhaColaborador"));
+const EficienciaOperacional = lazy(() => import("./pages/EficienciaOperacional"));
 const PreserFolha = lazy(() => import("./pages/PreserFolha"));
 const EquipeGasto = lazy(() => import("./pages/EquipeGasto"));
 const PreserLayout = lazy(() => import("./pages/preser/PreserLayout"));
@@ -37,7 +40,8 @@ export default function App() {
     <Suspense fallback={<Fallback />}>
       <Routes>
         <Route element={<AppLayout />}>
-          <Route index element={<Resumo />} />
+          <Route index element={<PainelOperacional />} />
+          <Route path="/resumo" element={<Resumo />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/ranking" element={<Ranking />} />
           <Route path="/faixas" element={<Faixas />} />
@@ -46,6 +50,8 @@ export default function App() {
           <Route path="/evolucao" element={<Evolucao />} />
           <Route path="/folha" element={<Folha />} />
           <Route path="/custos-setor" element={<CustosSetor />} />
+          <Route path="/folha-colaborador" element={<FolhaColaborador />} />
+          <Route path="/eficiencia-operacional" element={<EficienciaOperacional />} />
           <Route path="/preser-folha" element={<PreserFolha />} />
           <Route path="/equipe-gasto" element={<EquipeGasto />} />
           <Route element={<PreserLayout />}>

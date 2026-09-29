@@ -211,7 +211,7 @@ export default function Evolucao() {
               />
               <Tooltip formatter={(v: any) => fmtBRL(Number(v))} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="faturamento" name="Faturamento" stroke="hsl(215 80% 48%)" strokeWidth={2} dot />
+              <Line type="monotone" dataKey="faturamento" name="Faturamento" stroke="hsl(197 99% 28%)" strokeWidth={2} dot />
               <Line type="monotone" dataKey="custo" name="Custo" stroke="hsl(0 72% 55%)" strokeWidth={2} dot />
             </LineChart>
           </ResponsiveContainer>
@@ -269,7 +269,7 @@ export default function Evolucao() {
                 type="monotone"
                 dataKey="clientes"
                 name="Clientes"
-                stroke="hsl(200 70% 45%)"
+                stroke="hsl(196 89% 35%)"
                 strokeWidth={2}
                 dot
               />

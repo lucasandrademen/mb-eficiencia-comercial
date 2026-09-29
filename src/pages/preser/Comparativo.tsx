@@ -19,6 +19,7 @@ import {
   Target,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { cicloPreser } from "@/lib/preser/ciclo";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,7 +54,7 @@ type MetaComparada = {
 };
 
 const TIPO_COLORS = {
-  VBC: "hsl(215 80% 48%)",
+  VBC: "hsl(197 99% 28%)",
   Cobertura: "hsl(38 92% 50%)",
   Recomendador: "hsl(0 72% 55%)",
 };
@@ -216,7 +217,7 @@ export default function PreserComparativo() {
     <>
       <PageHeader
         title="Comparativo Mensal"
-        subtitle={`${lblAnt} → ${lblAtu}`}
+        subtitle={`PRESER ${lblAnt} → ${lblAtu} · bônus das metas de ${cicloPreser(anterior.extrato.periodo).mesMetas} → ${cicloPreser(atual.extrato.periodo).mesMetas}`}
         actions={<PreserPeriodoFilter />}
       />
 
@@ -345,7 +346,13 @@ export default function PreserComparativo() {
       {/* ── Tabela ──────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>Detalhe das metas — {lblAnt} vs {lblAtu}</CardTitle>
+          <CardTitle>
+            Detalhe das metas — {cicloPreser(anterior.extrato.periodo).mesMetas} vs{" "}
+            {cicloPreser(atual.extrato.periodo).mesMetas}{" "}
+            <span className="text-sm font-normal text-muted-foreground">
+              (PRESER {lblAnt} vs {lblAtu})
+            </span>
+          </CardTitle>
           <CardDescription>Ordenado por maior variação absoluta.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">

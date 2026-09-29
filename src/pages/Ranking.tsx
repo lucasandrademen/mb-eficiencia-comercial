@@ -81,6 +81,9 @@ export default function Ranking() {
     return arr;
   }, [rows, sortKey, dir, q]);
 
+  // Vendedores DISTINTOS (a tabela lista 1 linha por vendedor × mês de propósito).
+  const nVendedores = useMemo(() => new Set(sorted.map((r) => r.vendedor_id)).size, [sorted]);
+
   if (rows.length === 0) {
     return (
       <>
@@ -90,13 +93,14 @@ export default function Ranking() {
     );
   }
 
+  const subt =
+    sorted.length === nVendedores
+      ? `${fmtNum(nVendedores)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`
+      : `${fmtNum(nVendedores)} vendedores · ${fmtNum(sorted.length)} linhas (vendedor × mês) — clique no cabeçalho pra ordenar.`;
+
   return (
     <>
-      <PageHeader
-        title="Ranking de Vendedores"
-        subtitle={`${fmtNum(sorted.length)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`}
-        actions={<PeriodoFilter />}
-      />
+      <PageHeader title="Ranking de Vendedores" subtitle={subt} actions={<PeriodoFilter />} />
 
       <Card className="mb-4">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">

@@ -37,13 +37,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
-import { ENCARGOS_PCT } from "@/lib/calculations";
-import { listExtratos } from "@/lib/preser/api";
-import type { PreserExtrato } from "@/lib/preser/types";
+import { custoFolha, encargosFolha } from "@/lib/calculations";
+import { receitaLiquidaMes } from "@/lib/dro/receita";
 import { cn } from "@/lib/utils";
 
 const CORES_DEPT = [
-  "hsl(215 80% 48%)",
+  "hsl(197 99% 28%)",
   "hsl(152 60% 42%)",
   "hsl(38 92% 50%)",
   "hsl(271 60% 56%)",
@@ -91,84 +90,37 @@ export default function CustosSetor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroDept]);
 
-  // ─── Carrega extratos PRESER (faturamento real do broker) ─────────
-  const [extratosPreser, setExtratosPreser] = useState<PreserExtrato[]>([]);
-  useEffect(() => {
-    (async () => {
-      try {
-        setExtratosPreser(await listExtratos());
-      } catch {
-        setExtratosPreser([]);
-      }
-    })();
-  }, []);
-
   // ─── Filtra folha pelos períodos selecionados ─────────────────────
   const folhaFiltrada = useMemo(() => {
     if (periodosSelecionados.length === 0) return dataset.folha ?? [];
     return (dataset.folha ?? []).filter((f) => periodosSelecionados.includes(f.periodo));
   }, [dataset.folha, periodosSelecionados]);
 
-  // ─── Faturamento PRESER (do broker) por período ───────────────────
-  // Períodos da folha: "YYYY-MM" · Períodos PRESER: "YYYY-MM-01"
-  //
-  // Regras (conforme solicitação):
-  // - "Ano todo" (periodosSelecionados vazio) = SOMA DE TODOS os PRESER
-  //   importados, independente da folha
-  // - Mensal (1+ períodos) = só PRESER dos meses selecionados
-  const faturamentoPreser = useMemo(() => {
-    let total = 0;
-    let comissaoBruta = 0; // valor_total_contabilizado (R$ ~2,1 mi)
-    let comissaoLiquida = 0; // contabilizado - impostos
-    const extratosUsados: PreserExtrato[] = [];
-
-    const acumular = (ex: PreserExtrato) => {
-      total += ex.faturamento_ac ?? 0;
-      const contab = ex.valor_total_contabilizado ?? ex.valor_total_comissao ?? 0;
-      const impostos =
-        (ex.irrf_retido ?? 0) +
-        (ex.pis_retido ?? 0) +
-        (ex.cofins_retido ?? 0) +
-        (ex.csll_retido ?? 0);
-      comissaoBruta += contab;
-      comissaoLiquida += contab - impostos;
-      extratosUsados.push(ex);
-    };
-
-    if (periodosSelecionados.length === 0) {
-      // Ano todo: soma TODOS os PRESER imputados
-      for (const ex of extratosPreser) acumular(ex);
-    } else {
-      // Mensal: só PRESER dos meses selecionados
-      const set = new Set(periodosSelecionados);
-      for (const ex of extratosPreser) {
-        const ymPreser = ex.periodo.slice(0, 7);
-        if (set.has(ymPreser)) acumular(ex);
-      }
-    }
-    return { total, comissaoBruta, comissaoLiquida, extratosUsados };
-  }, [extratosPreser, periodosSelecionados]);
-
-  // Lista de meses PRESER importados (pra mostrar disponibilidade)
-  const mesesPreser = useMemo(
-    () => extratosPreser.map((ex) => ex.periodo.slice(0, 7)).sort(),
-    [extratosPreser],
+  // ─── Base financeira: Receita Líquida do DRO (o que de fato entrou) ─
+  // Soma da Receita Líquida (DRO) dos meses no escopo. "Ano todo" = todos os
+  // meses com folha; mensal = só os meses selecionados.
+  const periodosEscopo = useMemo(
+    () =>
+      periodosSelecionados.length > 0
+        ? [...periodosSelecionados].sort()
+        : [...new Set((dataset.folha ?? []).map((f) => f.periodo))].sort(),
+    [periodosSelecionados, dataset.folha],
+  );
+  const receitaBase = useMemo(
+    () => periodosEscopo.reduce((s, p) => s + receitaLiquidaMes(dataset.dro, p), 0),
+    [periodosEscopo, dataset.dro],
   );
 
-  // Cobertura: quais dos meses selecionados têm PRESER?
-  const coberturaPreser = useMemo(() => {
-    if (periodosSelecionados.length === 0) {
-      return { cobertos: mesesPreser, faltantes: [] as string[] };
-    }
-    const setPreser = new Set(mesesPreser);
+  // Cobertura: quais meses do escopo têm Receita Líquida no DRO?
+  const coberturaDro = useMemo(() => {
     const cobertos: string[] = [];
     const faltantes: string[] = [];
-    for (const p of periodosSelecionados) {
-      if (setPreser.has(p)) cobertos.push(p);
+    for (const p of periodosEscopo) {
+      if (receitaLiquidaMes(dataset.dro, p) > 0) cobertos.push(p);
       else faltantes.push(p);
     }
     return { cobertos, faltantes };
-  }, [periodosSelecionados, mesesPreser]);
+  }, [periodosEscopo, dataset.dro]);
 
   // ─── Mapa de faturamento por NOME (cruza folha → vendedor) ────────
   const faturamentoPorCodigoNome = useMemo(() => {
@@ -185,7 +137,7 @@ export default function CustosSetor() {
   // ─── Folha enriquecida: adiciona faturamento de cada funcionário ──
   const folhaEnriquecida = useMemo(() => {
     return folhaFiltrada.map((f) => {
-      const encargos = f.bruto * ENCARGOS_PCT;
+      const encargos = encargosFolha(f);
       const custoTotal = f.bruto + encargos;
       const fatPorCodigo = faturamentoPorCodigoNome.byCodigo.get(f.codigo) ?? 0;
       const fatPorNome = faturamentoPorCodigoNome.byNome.get(normaliza(f.nome)) ?? 0;
@@ -202,11 +154,8 @@ export default function CustosSetor() {
     });
   }, [folhaFiltrada, faturamentoPorCodigoNome]);
 
-  // ─── Base de cálculo: comissão líquida recebida pela MB ───────────
-  // Não usamos mais o faturamento bruto (R$ 16,8 mi) porque ele NÃO
-  // entra na conta da empresa — o que de fato entra é a comissão (~R$ 2 mi).
-  const comissaoLiquida = faturamentoPreser.comissaoLiquida;
-  const semPreser = comissaoLiquida === 0;
+  // ─── Base: Receita Líquida do DRO (quanto de fato entrou no caixa) ──
+  const semReceita = receitaBase === 0;
 
   // ─── Agrupado por departamento ────────────────────────────────────
   const porDepartamento = useMemo(() => {
@@ -243,10 +192,10 @@ export default function CustosSetor() {
     }
     return [...map.values()].map((d) => ({
       ...d,
-      pctCustoSobreFatTotal: comissaoLiquida > 0 ? d.custoTotal / comissaoLiquida : 0,
+      pctCustoSobreFatTotal: receitaBase > 0 ? d.custoTotal / receitaBase : 0,
       pctCustoSobreFatDept: d.faturamento > 0 ? d.custoTotal / d.faturamento : 0,
     }));
-  }, [folhaEnriquecida, comissaoLiquida]);
+  }, [folhaEnriquecida, receitaBase]);
 
   // ─── Tabela ordenada ──────────────────────────────────────────────
   const deptOrdenado = useMemo(() => {
@@ -302,18 +251,18 @@ export default function CustosSetor() {
     const custoEncargos = folhaEscopo.reduce((s, f) => s + f.encargos, 0);
     const custoTotal = folhaEscopo.reduce((s, f) => s + f.custoTotal, 0);
     const headcount = folhaEscopo.length;
-    // Resultado Bruto = Comissão líquida recebida pela MB − Custo do escopo selecionado
-    const resultadoBruto = comissaoLiquida - custoTotal;
-    const pctCustoComissao = comissaoLiquida > 0 ? custoTotal / comissaoLiquida : 0;
+    // Sobra após folha = Receita Líquida (DRO) − custo de folha do escopo
+    const resultadoBruto = receitaBase - custoTotal;
+    const pctCustoReceita = receitaBase > 0 ? custoTotal / receitaBase : 0;
     return {
       custoBruto,
       custoEncargos,
       custoTotal,
       headcount,
       resultadoBruto,
-      pctCustoComissao,
+      pctCustoReceita,
     };
-  }, [folhaEscopo, comissaoLiquida]);
+  }, [folhaEscopo, receitaBase]);
 
   const depts = useMemo(
     () => Array.from(new Set((folhaEnriquecida).map((f) => f.departamento || "—"))).sort(),
@@ -341,7 +290,7 @@ export default function CustosSetor() {
         v = { periodo: f.periodo, label: periodoLabel(f.periodo), total: 0, headcount: 0, porDept: {} };
         byPer.set(f.periodo, v);
       }
-      const custo = f.bruto * (1 + ENCARGOS_PCT);
+      const custo = custoFolha(f);
       const dept = f.departamento || "—";
       v.total += custo;
       v.headcount += 1;
@@ -382,7 +331,7 @@ export default function CustosSetor() {
         ? <ChevronUp className="ml-1 inline h-3 w-3 text-primary" />
         : <ChevronDown className="ml-1 inline h-3 w-3 text-primary" />;
 
-  if ((dataset.folha?.length ?? 0) === 0 || rows.length === 0) {
+  if ((dataset.folha?.length ?? 0) === 0) {
     return (
       <>
         <PageHeader
@@ -391,7 +340,7 @@ export default function CustosSetor() {
         />
         <EmptyState
           title="Faltam dados"
-          description="Importe a folha de pagamento E o Consolidado Preser na aba Importação para ver a análise."
+          description="Importe a folha de pagamento e o DRO (Receita Líquida) na aba Importação para ver a análise."
         />
       </>
     );
@@ -403,36 +352,32 @@ export default function CustosSetor() {
         title={filtroDept === "all" ? "Folha por Setor" : `Folha · ${filtroDept}`}
         subtitle={
           <>
-            Quanto cada setor custa sobre a comissão recebida{" "}
+            Quanto cada setor custa sobre a{" "}
+            <strong className="text-primary">Receita Líquida da MB (DRO)</strong>{" "}
             <strong>
               {periodosSelecionados.length === 0
-                ? `(Ano todo — soma de ${faturamentoPreser.extratosUsados.length} extrato(s) PRESER)`
+                ? `(${coberturaDro.cobertos.length} mês(es) com DRO)`
                 : periodosSelecionados.map((p) => periodoLabel(p)).join(" • ")}
             </strong>
-            {" · "}
-            <span className="text-xs">
-              Base:{" "}
-              <strong className="text-success">Comissão líquida PRESER</strong>
-            </span>
           </>
         }
         actions={<PeriodoFilter />}
       />
 
-      {/* ── Alerta: meses sem PRESER importado ─────────────────────── */}
-      {coberturaPreser.faltantes.length > 0 && (
+      {/* ── Alerta: meses sem DRO importado ─────────────────────────── */}
+      {coberturaDro.faltantes.length > 0 && (
         <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 p-3">
           <div className="flex items-start gap-2">
             <span className="text-warning">⚠️</span>
             <div className="text-xs">
               <p className="font-semibold text-warning">
-                Sem extrato PRESER para:{" "}
-                {coberturaPreser.faltantes.map((m) => periodoLabel(m)).join(", ")}
+                Sem Receita Líquida (DRO) para:{" "}
+                {coberturaDro.faltantes.map((m) => periodoLabel(m)).join(", ")}
               </p>
               <p className="text-muted-foreground mt-0.5">
-                O faturamento desses meses não está incluído. Importe o extrato PRESER em{" "}
-                <a href="/preser/importar" className="underline hover:text-foreground">
-                  /preser/importar
+                As % desses meses ficam sem base. Importe o{" "}
+                <a href="/upload" className="underline hover:text-foreground">
+                  DRO na aba Importação
                 </a>{" "}
                 para refletir nos cálculos.
               </p>
@@ -441,43 +386,14 @@ export default function CustosSetor() {
         </div>
       )}
 
-      {/* ── Lista de meses PRESER disponíveis ─────────────────────── */}
-      {mesesPreser.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-semibold uppercase tracking-wider">
-            PRESER imputados:
-          </span>
-          {mesesPreser.map((m) => (
-            <Badge
-              key={m}
-              variant={
-                periodosSelecionados.length === 0 ||
-                periodosSelecionados.includes(m)
-                  ? "success"
-                  : "muted"
-              }
-              className="text-[10px]"
-            >
-              {periodoLabel(m)}
-            </Badge>
-          ))}
-        </div>
-      )}
-
       {/* ── HERO: 4 KPIs ─────────────────────────────────────────── */}
       <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          title="Comissão Recebida (líquida)"
-          value={semPreser ? "—" : fmtBRL(comissaoLiquida, { compact: true })}
-          subtitle={
-            semPreser
-              ? "Sem extrato PRESER no(s) mês(es)"
-              : periodosSelecionados.length === 0
-                ? `${fmtBRL(comissaoLiquida)} · soma de ${faturamentoPreser.extratosUsados.length} mês(es) PRESER`
-                : `${fmtBRL(comissaoLiquida)} · após impostos`
-          }
+          title="Receita Líquida (DRO)"
+          value={semReceita ? "—" : fmtBRL(receitaBase, { compact: true })}
+          subtitle={semReceita ? "Importe o DRO no(s) mês(es)" : `${fmtBRL(receitaBase)} · o que entrou no caixa`}
           icon={TrendingUp}
-          variant={semPreser ? "warning" : "primary"}
+          variant={semReceita ? "warning" : "primary"}
         />
         <MetricCard
           title="Custo Total (c/ encargos)"
@@ -487,35 +403,29 @@ export default function CustosSetor() {
           variant="destructive"
         />
         <MetricCard
-          title="% Custo / Comissão"
-          value={
-            comissaoLiquida > 0 ? fmtPct(kpis.pctCustoComissao, 1) : "—"
-          }
+          title="% Custo / Receita"
+          value={receitaBase > 0 ? fmtPct(kpis.pctCustoReceita, 1) : "—"}
           subtitle={
-            comissaoLiquida > 0
-              ? `Folha consome ${fmtPct(kpis.pctCustoComissao, 0)} da comissão recebida`
-              : "Sem PRESER no período"
+            receitaBase > 0
+              ? `Folha consome ${fmtPct(kpis.pctCustoReceita, 0)} da Receita Líquida`
+              : "Sem DRO no período"
           }
           icon={Percent}
           variant={
-            kpis.pctCustoComissao < 0.5
+            kpis.pctCustoReceita < 0.45
               ? "success"
-              : kpis.pctCustoComissao < 0.8
+              : kpis.pctCustoReceita < 0.6
                 ? "warning"
                 : "destructive"
           }
         />
         <MetricCard
-          title="Resultado Bruto"
-          value={
-            comissaoLiquida > 0
-              ? fmtBRL(kpis.resultadoBruto, { compact: true })
-              : "—"
-          }
+          title="Sobra após a folha"
+          value={receitaBase > 0 ? fmtBRL(kpis.resultadoBruto, { compact: true }) : "—"}
           subtitle={
-            comissaoLiquida > 0
-              ? `Comissão ${fmtBRL(comissaoLiquida, { compact: true })} − Folha ${fmtBRL(kpis.custoTotal, { compact: true })}`
-              : "Sem PRESER no período"
+            receitaBase > 0
+              ? `Receita ${fmtBRL(receitaBase, { compact: true })} − Folha ${fmtBRL(kpis.custoTotal, { compact: true })}`
+              : "Sem DRO no período"
           }
           icon={Users}
           variant={kpis.resultadoBruto > 0 ? "success" : "destructive"}
@@ -544,6 +454,7 @@ export default function CustosSetor() {
                     innerRadius={50}
                     outerRadius={95}
                     paddingAngle={2}
+                    isAnimationActive={false}
                   >
                     {deptOrdenado.map((_, i) => (
                       <Cell key={i} fill={CORES_DEPT[i % CORES_DEPT.length]} />
@@ -568,9 +479,9 @@ export default function CustosSetor() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Percent className="h-4 w-4 text-warning" />
-              % Custo sobre Comissão
+              % Custo sobre Receita
             </CardTitle>
-            <CardDescription>Quanto cada setor consome da comissão recebida.</CardDescription>
+            <CardDescription>Quanto cada setor consome da Receita Líquida da MB.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[260px]">
@@ -602,7 +513,7 @@ export default function CustosSetor() {
                       fontSize: 12,
                     }}
                   />
-                  <Bar dataKey="pctCustoSobreFatTotal" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="pctCustoSobreFatTotal" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                     {deptOrdenado.map((d, i) => (
                       <Cell
                         key={i}
@@ -661,6 +572,7 @@ export default function CustosSetor() {
                         dataKey={d}
                         stackId="folha"
                         fill={CORES_DEPT[i % CORES_DEPT.length]}
+                        isAnimationActive={false}
                         radius={
                           i === evolucaoFolha.deptsOrdenados.length - 1 ? [4, 4, 0, 0] : undefined
                         }
@@ -714,8 +626,9 @@ export default function CustosSetor() {
                       yAxisId="hc"
                       dataKey="headcount"
                       name="Headcount"
-                      fill="hsl(215 80% 48% / 0.35)"
+                      fill="hsl(197 99% 28% / 0.35)"
                       radius={[4, 4, 0, 0]}
+                      isAnimationActive={false}
                     />
                     <Line
                       yAxisId="custo"
@@ -725,6 +638,7 @@ export default function CustosSetor() {
                       stroke="hsl(38 92% 50%)"
                       strokeWidth={2.5}
                       dot={{ r: 4 }}
+                      isAnimationActive={false}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -739,8 +653,7 @@ export default function CustosSetor() {
         <CardHeader>
           <CardTitle>Análise por Departamento</CardTitle>
           <CardDescription>
-            <strong>% s/ Comissão</strong> = quanto cada setor consome da comissão líquida
-            recebida da Nestlé.
+            <strong>% s/ Receita</strong> = quanto cada setor consome da Receita Líquida da MB (DRO).
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -757,7 +670,7 @@ export default function CustosSetor() {
                   Custo Total <SortIcon k="custoTotal" />
                 </Th>
                 <Th className="cursor-pointer select-none text-right" onClick={() => onSort("pctCustoSobreFatTotal")}>
-                  % s/ Comissão <SortIcon k="pctCustoSobreFatTotal" />
+                  % s/ Receita <SortIcon k="pctCustoSobreFatTotal" />
                 </Th>
               </Tr>
             </THead>
@@ -810,10 +723,10 @@ export default function CustosSetor() {
               <span
                 className={cn(
                   "font-mono font-bold",
-                  kpis.pctCustoComissao < 0.5 ? "text-success" : kpis.pctCustoComissao < 0.8 ? "text-warning" : "text-destructive",
+                  kpis.pctCustoReceita < 0.5 ? "text-success" : kpis.pctCustoReceita < 0.8 ? "text-warning" : "text-destructive",
                 )}
               >
-                {fmtPct(kpis.pctCustoComissao, 2)}
+                {fmtPct(kpis.pctCustoReceita, 2)}
               </span>
             </div>
           </div>
@@ -827,7 +740,7 @@ export default function CustosSetor() {
             <div>
               <CardTitle>Análise por Funcionário</CardTitle>
               <CardDescription>
-                <strong>% s/ Comissão</strong> = peso individual sobre a comissão líquida recebida.
+                <strong>% s/ Receita</strong> = peso individual sobre a Receita Líquida da MB (DRO).
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -898,13 +811,13 @@ export default function CustosSetor() {
                   <Th>Departamento</Th>
                   <Th className="text-right">Bruto</Th>
                   <Th className="text-right">Custo c/ encargos</Th>
-                  <Th className="text-right">% s/ Comissão</Th>
+                  <Th className="text-right">% s/ Receita</Th>
                 </Tr>
               </THead>
               <TBody>
                 {funcionariosFiltrados.map((f, i) => {
                   const pctSobreTotal =
-                    comissaoLiquida > 0 ? f.custoTotal / comissaoLiquida : 0;
+                    receitaBase > 0 ? f.custoTotal / receitaBase : 0;
                   return (
                     <Tr key={`${f.periodo}|${f.codigo}|${i}`}>
                       <Td className="font-mono text-xs text-muted-foreground">{f.codigo}</Td>
@@ -916,7 +829,7 @@ export default function CustosSetor() {
                         {fmtBRL(f.custoTotal, { compact: true })}
                       </Td>
                       <Td className="text-right">
-                        {semPreser ? (
+                        {semReceita ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
                           <span

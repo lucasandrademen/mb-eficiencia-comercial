@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 const QUADRANT_COLORS: Record<Quadrante, string> = {
   Estrela: "hsl(152 60% 42%)",
   "Trator caro": "hsl(38 92% 50%)",
-  Potencial: "hsl(215 80% 48%)",
+  Potencial: "hsl(197 99% 28%)",
   "Alerta vermelho": "hsl(0 72% 55%)",
   "—": "hsl(220 10% 50%)",
 };

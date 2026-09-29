@@ -30,6 +30,8 @@ import {
   Layers,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { CicloPreserInfo } from "@/components/preser/CicloPreserInfo";
+import { cicloPreser } from "@/lib/preser/ciclo";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +51,7 @@ import { cn } from "@/lib/utils";
 const C_OK = "hsl(152 60% 42%)";
 const C_WARN = "hsl(38 92% 50%)";
 const C_BAD = "hsl(0 72% 55%)";
-const C_PRIMARY = "hsl(215 80% 48%)";
+const C_PRIMARY = "hsl(197 99% 28%)";
 const C_PURPLE = "hsl(271 60% 56%)";
 
 export default function PreserDashboard() {
@@ -92,9 +94,9 @@ export default function PreserDashboard() {
     }
 
     return [
-      { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(215 80% 48%)", desc: "SKUs (Crit. 1)" },
+      { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(197 99% 28%)", desc: "SKUs (Crit. 1)" },
       { nome: "Drops", icone: "🚚", valor: drops, cor: "hsl(152 60% 42%)", desc: "Entregas por canal (Crit. 20)" },
-      { nome: "Bônus Meta", icone: "🎯", valor: metas, cor: "hsl(38 92% 50%)", desc: "VBC + Cobertura + Recomendador" },
+      { nome: "Bônus Meta", icone: "🎯", valor: metas, cor: "hsl(38 92% 50%)", desc: `Metas de ${cicloPreser(atual.extrato.periodo).mesMetasCurto} (VBC + Cob. + Rec.)` },
       { nome: "Transporte", icone: "🏭", valor: transporte, cor: "hsl(271 60% 56%)", desc: "Armazenagem + Refrigerado + Entrega" },
       { nome: "Garantia Crédito", icone: "🛡️", valor: garantia, cor: "hsl(185 60% 42%)", desc: "0,6% s/ faturamento (Crit. 21)" },
       { nome: "Visitas / Mercha", icone: "👣", valor: visitas, cor: "hsl(330 70% 50%)", desc: "Farma + PAC + Merchandising" },
@@ -357,15 +359,17 @@ export default function PreserDashboard() {
     <>
       <PageHeader
         title="Remuneração Broker (PRESER)"
-        subtitle={`${periodoLabel_} • ${historico.length} extrato(s) no histórico`}
+        subtitle={`PRESER ${periodoLabel_} • ${historico.length} extrato(s) no histórico`}
         actions={<PreserPeriodoFilter />}
       />
+
+      <CicloPreserInfo periodo={e.periodo} />
 
       {/* ═══════ HERO PRINCIPAL — Os 3 números que importam ═══════ */}
       <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         <HeroKpi
           label="Valor Faturado"
-          subLabel="Total vendido para a Nestlé (AC)"
+          subLabel={`Vendido p/ Nestlé · ${cicloPreser(e.periodo).fiscalInicio.slice(0, 5)} a ${cicloPreser(e.periodo).fiscalFim.slice(0, 5)}`}
           value={fmtBRL(e.faturamento_ac, { compact: true })}
           valueFull={fmtBRL(e.faturamento_ac)}
           icon={Target}
@@ -681,7 +685,7 @@ export default function PreserDashboard() {
               valor={e.csll_retido ?? 0}
               aliquota="1,0%"
               base={e.valor_total_contabilizado ?? 0}
-              cor="hsl(215 80% 48%)"
+              cor="hsl(197 99% 28%)"
               descricao="Contribuição Social sobre Lucro Líquido"
             />
           </div>
@@ -696,7 +700,7 @@ export default function PreserDashboard() {
                 { label: "IRRF", v: e.irrf_retido ?? 0, c: "hsl(0 72% 55%)" },
                 { label: "PIS", v: e.pis_retido ?? 0, c: "hsl(38 92% 50%)" },
                 { label: "COFINS", v: e.cofins_retido ?? 0, c: "hsl(271 60% 56%)" },
-                { label: "CSLL", v: e.csll_retido ?? 0, c: "hsl(215 80% 48%)" },
+                { label: "CSLL", v: e.csll_retido ?? 0, c: "hsl(197 99% 28%)" },
               ].map((d) => {
                 const pct = impostos > 0 ? (d.v / impostos) * 100 : 0;
                 if (pct === 0) return null;

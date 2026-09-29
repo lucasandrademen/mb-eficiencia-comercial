@@ -26,9 +26,13 @@ const Ctx = createContext<DataContextValue | null>(null);
 export function DataProvider({ children }: { children: ReactNode }) {
   const [dataset, setDatasetState] = useState<Dataset>(EMPTY_DATASET);
   const [periodosSelecionados, setPeriodosSelecionadosState] = useState<string[]>([]);
+  const [pronto, setPronto] = useState(false);
 
   useEffect(() => {
-    setDatasetState(loadDataset());
+    loadDataset().then((d) => {
+      setDatasetState(d);
+      setPronto(true);
+    });
   }, []);
 
   const setDataset = useCallback((d: Dataset) => {
@@ -42,6 +46,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         vendedor: partial.vendedor ?? dataset.vendedor,
         carteira: partial.carteira ?? dataset.carteira,
         folha: partial.folha ?? dataset.folha,
+        dro: partial.dro ?? dataset.dro,
         updatedAt: new Date().toISOString(),
       };
       setDatasetState(next);
@@ -116,6 +121,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     metrics,
   };
 
+  // só renderiza depois de ler o banco local (evita tela vazia e sobrescrever dados)
+  if (!pronto) return null;
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

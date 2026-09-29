@@ -9,9 +9,23 @@ import {
 } from "./types";
 import { periodoToTrimestre } from "./format";
 
-// Encargos patronais (FGTS + INSS + 13º + férias + provisões).
-// Mesma taxa usada no relatório de folha mensal (mb-payroll-insights).
+// Encargos patronais ESTIMADOS (FGTS + INSS + 13º + férias + provisões) — usado
+// SÓ como fallback quando a folha não traz os encargos reais (dado antigo ou
+// colaborador sem match). A folha nova (Listagem Analítica) traz os encargos
+// REAIS (FGTS + INSS-empresa + Terceiros + RAT ≈ 27% do bruto) — sempre preferir.
 export const ENCARGOS_PCT = 0.6746;
+
+/** Encargos patronais de um colaborador: REAIS da folha quando existem, senão estimativa. */
+export function encargosFolha(f: BaseFolha): number {
+  const e = f.encargos;
+  if (e) return e.fgts + e.inssEmpresa + e.terceiros + e.rat;
+  return f.bruto * ENCARGOS_PCT;
+}
+
+/** Custo total de um colaborador para a empresa: bruto + encargos (reais ou estimados). */
+export function custoFolha(f: BaseFolha): number {
+  return f.bruto + encargosFolha(f);
+}
 
 // ─── Folha: índice por período+código e por período+nome normalizado ───────
 
@@ -194,8 +208,8 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
       vendedor_id,
       vendedor_nome,
     );
-    // Custo real para a empresa = salário bruto + encargos patronais.
-    const custo = folhaMatch ? folhaMatch.bruto * (1 + ENCARGOS_PCT) : (vend?.custo ?? 0);
+    // Custo real para a empresa = salário bruto + encargos patronais (reais quando há folha).
+    const custo = folhaMatch ? custoFolha(folhaMatch) : (vend?.custo ?? 0);
     const folha_match_status: VendedorConsolidado["folha_match_status"] = !temFolha
       ? "sem_folha"
       : matchType;
