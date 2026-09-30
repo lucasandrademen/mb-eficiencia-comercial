@@ -419,7 +419,9 @@ export function computeTimeMetrics(rows: VendedorConsolidado[]): TimeMetrics {
 export function listPeriodos(ds: Dataset): string[] {
   const s = new Set<string>();
   for (const r of ds.vendedor) s.add(r.periodo);
-  for (const r of ds.carteira) s.add(r.periodo);
   for (const r of ds.folha ?? []) s.add(r.periodo);
+  // A carteira guarda histórico (desde 2025): só vira período do filtro
+  // quando não há base de vendedores — senão aparecem meses vazios.
+  if (!ds.vendedor.length) for (const r of ds.carteira) s.add(r.periodo);
   return [...s].sort();
 }
