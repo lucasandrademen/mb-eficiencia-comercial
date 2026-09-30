@@ -62,8 +62,10 @@ const isNum = (t: string) => NUM_RE.test(t);
 // Início de um bloco de pessoa. A folha lista EMPREGADO, APRENDIZ e SÓCIO (e
 // possivelmente outros vínculos). Antes só "EMPREGADO:" era detectado, então
 // aprendizes eram colados no colaborador anterior.
+// O modelo "Listagem Apropriação Analítica" (usado em algumas competências, ex.
+// Out/2025) escreve "Empregado:" em minúsculas para todos os vínculos — daí o /i.
 const PERSON_RE =
-  /^(EMPREGADO|APRENDIZ|S[ÓO]CIO|ESTAGI[ÁA]RIO|DIRETOR|AUT[ÔO]NOMO|PR[ÓO][ -]?LABORE|CONTRIBUINTE|PENSIONISTA|AVULSO|TRABALHADOR)\b.*?:\s*(\d{3,})\s*-\s*(.+)$/;
+  /^(EMPREGADO|APRENDIZ|S[ÓO]CIO|ESTAGI[ÁA]RIO|DIRETOR|AUT[ÔO]NOMO|PR[ÓO][ -]?LABORE|CONTRIBUINTE|PENSIONISTA|AVULSO|TRABALHADOR)\b.*?:\s*(\d{3,})\s*-\s*(.+)$/i;
 
 interface Item {
   str: string;
@@ -88,6 +90,15 @@ function parseEntry(tokens: string[], tipo: "vencimento" | "desconto"): VerbaFol
     .replace(/\s+/g, " ")
     .trim();
   return { tipo, codigo: m[1], descricao, valor };
+}
+
+/** Vínculo: no modelo "Apropriação" todos vêm como "Empregado:" — o cargo diz o resto. */
+function tipoVinculo(rotulo: string, cargo: string): string {
+  const t = rotulo.toUpperCase();
+  if (t !== "EMPREGADO") return t;
+  if (/S[ÓO]CIO/i.test(cargo)) return "SÓCIO";
+  if (/APRENDIZ/i.test(cargo)) return "APRENDIZ";
+  return t;
 }
 
 /**
@@ -142,6 +153,9 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
   // Limites de coluna por X (derivados do cabeçalho; defaults do layout Evo).
   let descX = 218;
   let baseX = 410;
+  // Modelo "Apropriação": o cabeçalho "Descontos"/"Bases" fica deslocado à direita
+  // das verbas (215 / 414), então as colunas são fixas em vez de lidas do cabeçalho.
+  let apropriacao = false;
 
   for (const ln of lines) {
     const txt = ln
@@ -154,7 +168,8 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
 
     // A "Listagem Sintética" (totais gerais da empresa) vem depois do último
     // colaborador e tem o mesmo layout — paramos antes p/ não somar no último.
-    if (txt.includes("Listagem Sintética") || txt.includes("Listagem Sintetica")) break;
+    if (/Listagem .*Sint[ée]tica/.test(txt)) break;
+    if (/Listagem Apropria/.test(txt)) apropriacao = true;
 
     const pm = txt.match(PERSON_RE);
     if (pm) {
@@ -172,7 +187,7 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
         cargo,
         departamento: "",
         centroCusto: "",
-        tipo: pm[1].toUpperCase(),
+        tipo: tipoVinculo(pm[1], cargo),
         bruto: 0,
         descontos: 0,
         liquido: 0,
@@ -186,12 +201,12 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
 
     // Cabeçalho do colaborador (antes das verbas): departamento e centro de custo.
     if (mode === null) {
-      if (!cur.departamento && txt.includes("Departamento:")) {
-        const dm = txt.match(/Departamento:\s*\d+\s*-\s*(.+?)(?:\s+C\.\s*Custo:|\s*$)/);
+      if (!cur.departamento && /Departamento:|Depto\.:/.test(txt)) {
+        const dm = txt.match(/(?:Departamento|Depto\.):\s*\d+\s*-\s*(.+?)(?:\s+C\.\s*Custo:|\s*$)/);
         if (dm) cur.departamento = dm[1].trim();
       }
       if (!cur.centroCusto) {
-        const cc = txt.match(/C\.\s*Custo:\s*\d+\s*-\s*(.+?)\s*$/);
+        const cc = txt.match(/C\.\s*Custo:\s*[\d.]+\s*-\s*(.+?)\s*$/);
         if (cc) cur.centroCusto = cc[1].trim();
         else {
           const st = txt.match(/^\d{6}\s*-\s*([A-ZÀ-Ú].+?)\s*$/);
@@ -207,17 +222,24 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
     }
 
     // Cabeçalho das verbas → define limites das colunas e entra em modo verba.
-    if (txt.startsWith("Vencimentos") && txt.includes("Descontos")) {
+    // No modelo "Apropriação", quando há nota de afastamento o rótulo "Vencimentos"
+    // cai numa linha própria, logo abaixo de "Ref. Valor Descontos … Bases".
+    if ((txt.startsWith("Vencimentos") && txt.includes("Descontos")) || (apropriacao && /Descontos.*Bases/.test(txt))) {
       const d = ln.find((i) => i.str.trim() === "Descontos");
       const b = ln.find((i) => i.str.trim() === "Bases");
-      if (d) descX = d.x - 4;
-      if (b) baseX = b.x - 4;
+      if (apropriacao) {
+        descX = 210;
+        baseX = 408;
+      } else {
+        if (d) descX = d.x - 4;
+        if (b) baseX = b.x - 4;
+      }
       mode = "verba";
       continue;
     }
 
     // Totais → fecha o colaborador (evita vazamento de linhas seguintes).
-    if (txt.startsWith("Total Vencimentos")) {
+    if (/^Total (de )?Vencimentos/.test(txt)) {
       const nums = [...txt.matchAll(/\(?(\d{1,3}(?:\.\d{3})*,\d{2})\)?/g)].map((m) => m[1]);
       if (nums.length >= 3) {
         cur.bruto = parseBRL(nums[0]);
