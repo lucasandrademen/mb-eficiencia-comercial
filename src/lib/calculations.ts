@@ -234,7 +234,13 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
 
   const allKeys = new Set<string>();
   for (const r of fVendedor) allKeys.add(k(r.periodo, r.vendedor_id));
-  for (const r of fCarteira) allKeys.add(k(r.periodo, r.vendedor_id));
+  // A carteira traz histórico (ex.: desde 2025) e setores sem vendedor cadastrado.
+  // Com a base de vendedores carregada, só entram os pares vendedor × mês que
+  // existem nela — senão surgem meses/setores sem custo, distorcendo a análise.
+  for (const r of fCarteira) {
+    const key = k(r.periodo, r.vendedor_id);
+    if (!fVendedor.length || vendedorByKey.has(key)) allKeys.add(key);
+  }
 
   const rows: VendedorConsolidado[] = [];
   for (const key of allKeys) {
@@ -277,6 +283,7 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
 
     const distinctClientes = new Set(cart.map((c) => c.cliente_id));
     const total_clientes_carteira = distinctClientes.size;
+    const clientes_positivados = new Set(cart.filter((c) => c.faturamento_cliente > 0).map((c) => c.cliente_id)).size;
 
     const cidadesList = cart.map((c) => (c.cidade || "").trim()).filter(Boolean);
     const total_municipios_atendidos = new Set(cidadesList).size;
@@ -322,6 +329,7 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
       quadrante_performance: "—",
 
       total_clientes_carteira,
+      clientes_positivados,
       total_municipios_atendidos,
       ticket_medio,
       custo_por_cliente_carteira,

@@ -254,7 +254,14 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
           {r.quadrante_performance}
         </Badge>
       </Td>
-      <Td className="text-right">{fmtNum(r.total_clientes_carteira)}</Td>
+      <Td className="text-right">
+        {fmtNum(r.total_clientes_carteira)}
+        {r.total_clientes_carteira > 0 && r.clientes_positivados != null && (
+          <div className="text-[10px] text-muted-foreground">
+            {fmtNum(r.clientes_positivados)} compraram ({Math.round((r.clientes_positivados / r.total_clientes_carteira) * 100)}%)
+          </div>
+        )}
+      </Td>
       <Td className="text-right">{fmtNum(r.total_municipios_atendidos)}</Td>
       <Td className="text-right">{fmtBRL(r.ticket_medio, { compact: true })}</Td>
     </Tr>

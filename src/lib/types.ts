@@ -117,6 +117,8 @@ export interface VendedorConsolidado {
 
   // Carteira
   total_clientes_carteira: number;
+  /** Clientes da carteira que compraram no mês. */
+  clientes_positivados?: number;
   total_municipios_atendidos: number;
   ticket_medio: number; // faturamento / total_clientes_carteira
   custo_por_cliente_carteira: number;
