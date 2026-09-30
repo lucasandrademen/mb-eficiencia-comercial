@@ -117,16 +117,23 @@ export async function parseFolhaPdf(file: File): Promise<ParsedEmployee[]> {
         y: it.transform?.[5] ?? 0,
       }))
       .filter((it) => it.str.trim().length > 0);
-    const byY = new Map<number, Item[]>();
-    for (const it of items) {
-      const k = Math.round(it.y / 2);
-      if (!byY.has(k)) byY.set(k, []);
-      byY.get(k)!.push(it);
+    // Agrupa por PROXIMIDADE de Y (tolerância de 1,5 pt), e não por faixa fixa:
+    // arredondar Y/2 separava "Departamento:" (y 528,85) do valor (y 529,20)
+    // quando caíam em faixas diferentes — e o colaborador ficava "Sem setor".
+    // pdfjs: Y maior = mais alto na página → ordena desc p/ ler de cima p/ baixo.
+    const ordenados = [...items].sort((a, b) => b.y - a.y);
+    let linha: Item[] = [];
+    let yLinha = Number.NaN;
+    for (const it of ordenados) {
+      if (linha.length && Math.abs(it.y - yLinha) <= 1.5) {
+        linha.push(it);
+      } else {
+        if (linha.length) lines.push(linha.sort((a, b) => a.x - b.x));
+        linha = [it];
+        yLinha = it.y;
+      }
     }
-    // pdfjs: Y maior = mais alto na página → ordenar desc p/ ler de cima p/ baixo.
-    for (const k of [...byY.keys()].sort((a, b) => b - a)) {
-      lines.push(byY.get(k)!.sort((a, b) => a.x - b.x));
-    }
+    if (linha.length) lines.push(linha.sort((a, b) => a.x - b.x));
   }
 
   const out: ParsedEmployee[] = [];
