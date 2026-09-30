@@ -27,6 +27,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { QuantoSobrou } from "@/components/QuantoSobrou";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useData } from "@/contexts/DataContext";
 import { custoFolha } from "@/lib/calculations";
@@ -428,6 +429,16 @@ export default function PainelOperacional() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ─── C2) Quanto sobrou: venda × recebido × lucro líquido ─────────────── */}
+      <SectionTitle>Quanto sobrou do que vendemos</SectionTitle>
+      <QuantoSobrou
+        d2026={fonteDro.d2026}
+        d2025={fonteDro.d2025}
+        meses={MESES_FILTRO}
+        mesesComuns={MESES_COMP}
+        extratos={extratos}
+      />
 
       {/* ─── D) Evolução mensal ─────────────────────────────────────────────── */}
       <SectionTitle>Mês a mês</SectionTitle>
