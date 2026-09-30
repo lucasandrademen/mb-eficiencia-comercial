@@ -18,12 +18,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
+import { cicloPreser } from "@/lib/preser/ciclo";
 import { usePreserData } from "@/contexts/PreserDataContext";
-import { supabaseConfigured } from "@/lib/preser/supabase";
 import { savePreser, type ParsedPreser } from "@/lib/preser/importar";
 import { deletePreserExtrato } from "@/lib/preser/api";
 import { parsePreserExtratoPdf } from "@/lib/preser/parseExtratoPdf";
-import { PreserEmptyState } from "./PreserEmptyState";
 
 const MESES_CURTOS = [
   "Janeiro",
@@ -78,15 +77,6 @@ export default function PreserImportar() {
   const [periodo, setPeriodo] = useState("");
   const [valorTotal, setValorTotal] = useState("");
   const [valorContabilizado, setValorContabilizado] = useState("");
-
-  if (!supabaseConfigured) {
-    return (
-      <>
-        <PageHeader title="Importar extrato PRESER" />
-        <PreserEmptyState />
-      </>
-    );
-  }
 
   const handleFile = useCallback(async (f: File) => {
     if (!f.name.toLowerCase().endsWith(".pdf")) {
@@ -154,7 +144,7 @@ export default function PreserImportar() {
   const onConfirm = async () => {
     if (!parsed) return;
     if (!/^\d{4}-\d{2}$/.test(periodo)) {
-      toast.error("Selecione o mês de referência antes de confirmar.");
+      toast.error("Selecione o mês do PRESER antes de confirmar.");
       return;
     }
     setStep("saving");
@@ -271,7 +261,10 @@ export default function PreserImportar() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+              <span>
+                Cada card = mês do PRESER (apuração). Ex.: Set = fat. 20/08–19/09 + metas de Ago.
+              </span>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block h-3 w-3 rounded-sm bg-success/70" /> Importado
               </span>
@@ -366,7 +359,7 @@ export default function PreserImportar() {
               <CardDescription>Corrija campos se o parser errou.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <MonthField label="Mês de referência" value={periodo} onChange={setPeriodo} />
+              <MonthField label="Mês do PRESER (apuração)" value={periodo} onChange={setPeriodo} />
               <Field
                 label="Receita broker total (R$)"
                 value={valorTotal}
@@ -681,8 +674,9 @@ function MonthField({
         className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
       />
       {value && (
-        <p className="mt-1 text-[11px] capitalize text-muted-foreground">
-          {periodoLabel(value)}
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Faturamento {cicloPreser(value).fiscalInicio} a {cicloPreser(value).fiscalFim} · bônus
+          das metas de {cicloPreser(value).mesMetas}
         </p>
       )}
     </div>

@@ -1,4 +1,5 @@
-import { getSupabase } from "./supabase";
+import { preserAll, preserPut } from "@/lib/localDb";
+import { invalidatePreserCache } from "./api";
 import type {
   PreserExtrato,
   PreserSku,
@@ -15,61 +16,35 @@ export interface ParsedPreser {
   outros: Omit<PreserOutro, "id" | "extrato_id">[];
 }
 
-/** Chama a Edge Function e retorna o JSON parseado */
-export async function callParseEdgeFunction(
-  file: File,
-  supabaseUrl: string,
-  anonKey: string,
-): Promise<ParsedPreser> {
-  const form = new FormData();
-  form.append("pdf", file);
+const novoId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/preser-parse`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${anonKey}` },
-    body: form,
-  });
+const div = (a: number | null | undefined, b: number | null | undefined) =>
+  a != null && b ? a / b : null;
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-  return data as ParsedPreser;
-}
-
-/** Salva o extrato e todas as linhas no Supabase (5 tabelas) */
+/** Salva o extrato no banco local. Reimportar o mesmo mês substitui o anterior. */
 export async function savePreser(parsed: ParsedPreser): Promise<string> {
-  const sb = getSupabase();
-  if (!sb) throw new Error("Supabase não configurado");
+  const existente = (await preserAll()).find((e) => e.extrato.periodo === parsed.extrato.periodo);
+  const id = existente?.extrato.id ?? novoId();
+  const comId = <T>(rows: T[]) => rows.map((r) => ({ ...r, id: novoId(), extrato_id: id }));
 
-  // 1) Upsert extrato
-  const { data: extratoRows, error: errExtrato } = await sb
-    .from("preser_extrato")
-    .upsert(parsed.extrato, { onConflict: "periodo" })
-    .select("id")
-    .single();
-  if (errExtrato) throw errExtrato;
-  const extratoId = extratoRows.id as string;
-
-  // 2) Limpa dados antigos do período
-  await Promise.all([
-    sb.from("preser_sku").delete().eq("extrato_id", extratoId),
-    sb.from("preser_drops").delete().eq("extrato_id", extratoId),
-    sb.from("preser_metas").delete().eq("extrato_id", extratoId),
-    sb.from("preser_outros").delete().eq("extrato_id", extratoId),
-  ]);
-
-  // 3) Insere novos dados
-  const withId = <T>(rows: T[]) => rows.map((r) => ({ ...r, extrato_id: extratoId }));
-
-  const [r1, r2, r3, r4] = await Promise.all([
-    sb.from("preser_sku").insert(withId(parsed.skus)),
-    sb.from("preser_drops").insert(withId(parsed.drops)),
-    sb.from("preser_metas").insert(withId(parsed.metas)),
-    sb.from("preser_outros").insert(withId(parsed.outros)),
-  ]);
-
-  for (const r of [r1, r2, r3, r4]) {
-    if (r.error) throw r.error;
-  }
-
-  return extratoId;
+  await preserPut({
+    extrato: {
+      ...parsed.extrato,
+      id,
+      // antes eram colunas calculadas no Postgres
+      pct_remuneracao_sobre_fat: div(parsed.extrato.valor_total_comissao, parsed.extrato.faturamento_ac),
+      created_at: existente?.extrato.created_at ?? new Date().toISOString(),
+    },
+    skus: comId(parsed.skus),
+    drops: comId(parsed.drops),
+    metas: comId(parsed.metas).map((m) => ({
+      ...m,
+      pct_realizacao: div(m.efetivo_fiscal, m.objetivo_meta),
+    })),
+    outros: comId(parsed.outros),
+  });
+  invalidatePreserCache();
+  return id;
 }

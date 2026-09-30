@@ -32,8 +32,11 @@ export default function PreserRegras() {
             sobre vendas) até prestação de serviços fixos (armazenagem, seguro, entrega).
           </p>
           <p className="text-muted-foreground">
-            <strong>Período de apuração:</strong> mensal, do dia 20 ao dia 19 do mês seguinte (ex:
-            extrato de Apuração 2026/4 = atividade entre 20/Mar e 19/Abr).
+            <strong>Período de apuração:</strong> o extrato leva o nome do mês da apuração. O
+            faturamento (período fiscal) vai do dia 20 do mês anterior ao dia 19 do mês do PRESER,
+            e o <strong>bônus de metas</strong> (VBC, Cobertura, Recomendador) é pago pelas metas
+            batidas no <strong>mês anterior</strong>. Ex.: PRESER de Setembro/2026 = faturamento de
+            20/08 a 19/09 + bônus das metas de Agosto/2026.
           </p>
         </CardContent>
       </Card>
@@ -65,7 +68,7 @@ export default function PreserRegras() {
             <TBody>
               <Tr>
                 <Td>
-                  <Badge style={{ background: "hsl(215 80% 48% / 0.2)", color: "hsl(215 80% 48%)", border: "none" }}>
+                  <Badge style={{ background: "hsl(197 99% 28% / 0.2)", color: "hsl(197 99% 28%)", border: "none" }}>
                     1 · Mix Pilar
                   </Badge>
                 </Td>

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { BackupLocal } from "./BackupLocal";
 import {
+  Gauge,
   LayoutDashboard,
   Upload,
   Trophy,
@@ -10,7 +12,6 @@ import {
   TrendingUp,
   ChevronsLeft,
   ChevronsRight,
-  Briefcase,
   Receipt,
   Building2,
   Handshake,
@@ -23,6 +24,8 @@ import {
   Users,
   BarChart3,
   BookOpen,
+  CalendarRange,
+  Crosshair,
 } from "lucide-react";
 
 type NavItem = {
@@ -38,7 +41,8 @@ const sections: NavSection[] = [
   {
     label: null, // Visão geral — topo, sem rótulo
     items: [
-      { to: "/", label: "Resumo Executivo", icon: LayoutDashboard, end: true },
+      { to: "/", label: "Painel Operacional", icon: Gauge, end: true },
+      { to: "/resumo", label: "Resumo Executivo", icon: LayoutDashboard },
       { to: "/preser-folha", label: "PRESER × Folha", icon: Scale },
     ],
   },
@@ -56,7 +60,9 @@ const sections: NavSection[] = [
   {
     label: "Custos & Folha",
     items: [
+      { to: "/eficiencia-operacional", label: "Eficiência Operacional", icon: Gauge },
       { to: "/custos-setor", label: "Folha por Setor", icon: Building2 },
+      { to: "/folha-colaborador", label: "Detalhe por Colaborador", icon: Users },
       { to: "/folha", label: "Folha Detalhada", icon: Receipt },
     ],
   },
@@ -65,10 +71,12 @@ const sections: NavSection[] = [
     items: [
       { to: "/preser", label: "Dashboard PRESER", icon: Handshake, end: true },
       { to: "/preser/comparativo", label: "Comparativo Mensal", icon: GitCompare },
+      { to: "/preser/anual", label: "Comparativo 2025 × 2026", icon: CalendarRange },
       { to: "/preser/oportunidades", label: "Oportunidades", icon: Zap },
       { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
       { to: "/preser/sku", label: "Análise por SKU", icon: Package },
       { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
+      { to: "/preser/cobertura", label: "Cobertura por Categoria", icon: Crosshair },
       { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
       { to: "/preser/regras", label: "Regras PRESER", icon: BookOpen },
     ],
@@ -91,17 +99,19 @@ export function AppSidebar() {
         collapsed ? "w-[60px]" : "w-60"
       }`}
     >
-      {/* Logo */}
-      <div className={`flex items-center gap-2.5 px-3 py-4 ${collapsed ? "justify-center" : ""}`}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-elevated shrink-0">
-          <Briefcase className="h-4 w-4 text-primary-foreground" />
-        </div>
-        {!collapsed && (
+      {/* Logomarca MB · padrão MB */}
+      <div className={`flex items-center px-3 py-5 ${collapsed ? "justify-center" : ""}`}>
+        {collapsed ? (
+          <div className="flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-xl bg-white shadow-elevated">
+            <span className="text-sm font-extrabold leading-none tracking-tight text-sidebar-background">MB</span>
+            <span className="mt-0.5 h-[2.5px] w-4 rounded-full bg-accent" />
+          </div>
+        ) : (
           <div className="min-w-0">
-            <h1 className="text-xs font-bold text-sidebar-foreground tracking-tight truncate">
+            <img src="/logo-mb.png" alt="MB Logística" className="h-9 w-auto max-w-full object-contain" />
+            <p className="mt-1.5 text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
               Eficiência Comercial
-            </h1>
-            <p className="text-[10px] text-sidebar-foreground/50">MB Logística</p>
+            </p>
           </div>
         )}
       </div>
@@ -144,6 +154,10 @@ export function AppSidebar() {
           </div>
         ))}
       </nav>
+
+      <div className="px-2 pb-1">
+        <BackupLocal collapsed={collapsed} />
+      </div>
 
       {/* Collapse toggle */}
       <button

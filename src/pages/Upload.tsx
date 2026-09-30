@@ -15,8 +15,9 @@ import { Select } from "@/components/ui/select";
 import { useData } from "@/contexts/DataContext";
 import { parsePreserPdf } from "@/lib/parsePreserPdf";
 import { parseFolhaPdf } from "@/lib/parseFolhaPdf";
-import { fmtNum, periodoLabel } from "@/lib/format";
-import { BaseFolha, BaseVendedor } from "@/lib/types";
+import { parseDroExcel } from "@/lib/parseDroExcel";
+import { fmtBRL, fmtNum, periodoLabel } from "@/lib/format";
+import { BaseFolha, BaseVendedor, DroDataset } from "@/lib/types";
 
 function mesesPicker(): string[] {
   const out: string[] = [];
@@ -36,7 +37,9 @@ const defaultMes = () => {
 };
 
 export default function Upload() {
-  const { dataset, mergeDataset, reset, periodos } = useData();
+  // Importação sempre trabalha com TODOS os anos (senão, ao gravar uma folha nova,
+  // os meses de outro ano sumiriam da base).
+  const { datasetCompleto: dataset, mergeDataset, reset, periodos } = useData();
 
   const totals = {
     vendedor: dataset.vendedor.length,
@@ -47,7 +50,7 @@ export default function Upload() {
     <div>
       <PageHeader
         title="Importação de Dados"
-        subtitle="Carregue os 2 PDFs do mês: Consolidado Preser (faturamento) e Folha de Pagamento (custo com encargos)."
+        subtitle="Por mês: Consolidado Preser (faturamento Nestlé), Folha de Pagamento (custo + encargos) e o DRO da MB (Receita Líquida — o que entrou no caixa)."
         actions={
           totals.vendedor + totals.folha > 0 ? (
             <Button
@@ -90,6 +93,10 @@ export default function Upload() {
         />
       </div>
 
+      <div className="mt-4">
+        <DroUploader existing={dataset.dro} onParsed={(dro) => mergeDataset({ dro })} />
+      </div>
+
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>Como funciona</CardTitle>
@@ -115,6 +122,105 @@ export default function Upload() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function DroUploader({
+  existing,
+  onParsed,
+}: {
+  existing?: DroDataset;
+  onParsed: (dro: DroDataset) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    setBusy(true);
+    setLastError(null);
+    try {
+      const dro = await parseDroExcel(file);
+      if (dro.meses2026.length === 0) {
+        setLastError("Nenhum mês com Receita Líquida encontrado. Confira se é o DRO da MB Logística (.xlsx).");
+        toast.error("DRO não reconhecido.");
+        return;
+      }
+      onParsed(dro);
+      toast.success(`DRO importado — ${dro.meses2026.length} mês(es) de 2026.`);
+    } catch (e: any) {
+      setLastError(e?.message || "Erro ao ler o Excel.");
+      toast.error("Erro ao ler o DRO.");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const ult = existing?.meses2026?.[existing.meses2026.length - 1];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              DRO — Financeiro da MB (Excel)
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Excel "DRO MB Logística". Traz a <strong>Receita Líquida</strong> (o que de fato entrou no caixa) por
+              mês — é a base das % de custo por setor e colaborador.
+            </CardDescription>
+          </div>
+          {existing && existing.meses2026.length > 0 && (
+            <Badge variant="success" className="gap-1">
+              <Check className="h-3 w-3" /> {fmtNum(existing.meses2026.length)} mês(es)
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {existing && ult && (
+          <p className="text-xs text-muted-foreground">
+            Último mês: <strong className="text-foreground">{periodoLabel(ult.periodo)}</strong> · Receita Líquida{" "}
+            <strong className="text-foreground">{fmtBRL(ult.receitaLiquida, { compact: true })}</strong>
+          </p>
+        )}
+        <div>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            O que é extraído (aba MB Logística)
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {["receita líquida", "receita bruta", "custos", "EBITDA", "resultado"].map((c) => (
+              <Badge key={c} variant="outline" className="font-mono text-[10px]">
+                {c}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
+        <Button onClick={() => inputRef.current?.click()} disabled={busy}>
+          <UploadIcon className="h-4 w-4" />
+          {busy ? "Lendo Excel…" : "Importar DRO (Excel)"}
+        </Button>
+        {lastError && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>{lastError}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -275,9 +381,15 @@ function FolhaUploader({
         nome: e.nome,
         cargo: e.cargo,
         departamento: e.departamento,
+        centroCusto: e.centroCusto,
+        tipo: e.tipo,
         bruto: e.bruto,
         descontos: e.descontos,
         liquido: e.liquido,
+        verbas: e.verbas,
+        encargos: e.encargos,
+        admissao: e.admissao,
+        demissao: e.demissao,
       }));
       const base = existing.filter((r) => r.periodo !== mesSel);
       onParsed([...base, ...parsed]);

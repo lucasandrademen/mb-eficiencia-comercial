@@ -51,8 +51,8 @@ export const PERIODO_LABELS: Record<string, string> = {
 export const periodoLabel = (p: string) => {
   if (PERIODO_LABELS[p]) return PERIODO_LABELS[p];
   const [y, m] = p.split("-");
-  const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-  if (y && m) return `${meses[parseInt(m, 10) - 1]}/${y}`;
+  const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  if (y && m && meses[parseInt(m, 10) - 1]) return `${meses[parseInt(m, 10) - 1]}/${y}`;
   return p;
 };
 

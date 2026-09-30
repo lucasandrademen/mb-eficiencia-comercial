@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { PreserEmptyState } from "./PreserEmptyState";
 
 const CORES = [
-  "hsl(215 80% 48%)",
+  "hsl(197 99% 28%)",
   "hsl(152 60% 42%)",
   "hsl(38 92% 50%)",
   "hsl(271 60% 56%)",
@@ -39,7 +39,7 @@ const CORES = [
 ];
 
 const CATEGORIA_CORES: Record<string, string> = {
-  "Mix Pilar": "hsl(215 80% 48%)",
+  "Mix Pilar": "hsl(197 99% 28%)",
   "High Pull": "hsl(38 92% 50%)",
   "High High Pull": "hsl(271 60% 56%)",
   "Estratégico": "hsl(152 60% 42%)",

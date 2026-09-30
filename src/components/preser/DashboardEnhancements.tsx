@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { cicloPreser } from "@/lib/preser/ciclo";
 import { Link } from "react-router-dom";
 // (Recharts não é mais usado aqui — Matriz é CSS pura)
 import {
@@ -252,7 +253,7 @@ export function ComparativoBanner({
             </span>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {lblAnt} → {lblAtu}
+                PRESER {lblAnt} → {lblAtu}
               </p>
               <p className="mt-0.5 text-2xl font-bold leading-tight">
                 {positivo ? "+" : ""}
@@ -274,7 +275,11 @@ export function ComparativoBanner({
           </div>
 
           {topMudancas.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-full text-[11px] font-semibold uppercase tracking-wider text-muted-foreground lg:w-auto">
+                Bônus de metas {cicloPreser(anterior.extrato.periodo).mesMetasCurto} →{" "}
+                {cicloPreser(atual.extrato.periodo).mesMetasCurto}
+              </span>
               {topMudancas.map((m, i) => (
                 <div
                   key={i}
@@ -564,7 +569,7 @@ function classificar(esforco: number, impacto: number): OportunidadeMatriz["cate
 function corCategoria(c: OportunidadeMatriz["categoria"]): string {
   switch (c) {
     case "Quick Win": return "hsl(152 60% 42%)";
-    case "Estratégico": return "hsl(215 80% 48%)";
+    case "Estratégico": return "hsl(197 99% 28%)";
     case "Manutenção": return "hsl(38 92% 50%)";
     case "Pouca Prioridade": return "hsl(220 10% 50%)";
   }
@@ -610,7 +615,7 @@ function CssScatterMatrix({ oportunidades }: { oportunidades: OportunidadeMatriz
       titulo: "Estratégicos",
       desc: "Alto esforço · Alto impacto",
       icone: "💎",
-      cor: "hsl(215 80% 48%)",
+      cor: "hsl(197 99% 28%)",
       bgClasse: "bg-primary/10",
       borderClasse: "border-primary/40",
     },

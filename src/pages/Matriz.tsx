@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 const QUADRANT_COLORS: Record<Quadrante, string> = {
   Estrela: "hsl(152 60% 42%)",
   "Trator caro": "hsl(38 92% 50%)",
-  Potencial: "hsl(215 80% 48%)",
+  Potencial: "hsl(197 99% 28%)",
   "Alerta vermelho": "hsl(0 72% 55%)",
   "—": "hsl(220 10% 50%)",
 };
@@ -47,20 +47,32 @@ const quadrantBadge: Record<Quadrante, "success" | "warning" | "default" | "dest
   "—": "muted",
 };
 
-type Aba = "vendedores" | "supervisores";
+type Aba = "varejo" | "ka" | "npro" | "supervisores";
+
+const ABAS: { k: Aba; rotulo: string; desc: string }[] = [
+  { k: "varejo", rotulo: "Varejo", desc: "Vendedores do varejo, comparados só entre si." },
+  { k: "ka", rotulo: "KA", desc: "Key Account (setores 101, 207, 601 e 117), comparados só entre si." },
+  { k: "npro", rotulo: "NPRO", desc: "Professional (setores 5xx), comparados só entre si." },
+  { k: "supervisores", rotulo: "Supervisores", desc: "Supervisores." },
+];
+
+/** Linha pertence à aba? (segmento para vendedores; supervisores à parte) */
+function naAba(r: VendedorConsolidado, aba: Aba): boolean {
+  if (aba === "supervisores") return r.is_supervisor;
+  if (r.is_supervisor) return false;
+  const seg = r.segmento ?? "Varejo";
+  return aba === "ka" ? seg === "KA" : aba === "npro" ? seg === "NPRO" : seg === "Varejo";
+}
 
 export default function Matriz() {
   const { rows } = useData();
-  const [aba, setAba] = useState<Aba>("vendedores");
+  const [aba, setAba] = useState<Aba>("varejo");
   const [selColabs, setSelColabs] = useState<Set<string>>(new Set());
   const [selQuads, setSelQuads] = useState<Set<Quadrante>>(new Set());
   const [acumulado, setAcumulado] = useState<boolean>(true);
 
-  // Filtra por aba (supervisor vs vendedor)
-  const escopoRows = useMemo(
-    () => rows.filter((r) => (aba === "supervisores" ? r.is_supervisor : !r.is_supervisor)),
-    [rows, aba],
-  );
+  // Filtra por aba: Varejo, KA, NPRO (cada um com a sua matriz) ou Supervisores
+  const escopoRows = useMemo(() => rows.filter((r) => naAba(r, aba)), [rows, aba]);
 
   // Lista de colaboradores do escopo atual (para filtro multi-select)
   const colabsDisponiveis = useMemo(() => {
@@ -194,9 +206,9 @@ export default function Matriz() {
         </span>
       </div>
 
-      {/* Abas Vendedores / Supervisores */}
-      <div className="mb-4 inline-flex rounded-lg border border-border bg-card p-1">
-        {(["vendedores", "supervisores"] as Aba[]).map((a) => (
+      {/* Abas: uma matriz para cada segmento (Varejo, KA, NPRO) + Supervisores */}
+      <div className="mb-2 inline-flex flex-wrap rounded-lg border border-border bg-card p-1">
+        {ABAS.map(({ k: a, rotulo }) => (
           <button
             key={a}
             type="button"
@@ -211,17 +223,17 @@ export default function Matriz() {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {a === "vendedores" ? "Vendedores" : "Supervisores"}
+            {rotulo}
             <span className="ml-1.5 text-[11px] opacity-70">
-              (
-              {a === "vendedores"
-                ? rows.filter((r) => !r.is_supervisor).length
-                : rows.filter((r) => r.is_supervisor).length}
-              )
+              ({new Set(rows.filter((r) => naAba(r, a)).map((r) => r.vendedor_id)).size})
             </span>
           </button>
         ))}
       </div>
+      <p className="mb-4 text-xs text-muted-foreground">
+        {ABAS.find((x) => x.k === aba)?.desc} Os cortes (medianas de faturamento e de % de custo) são calculados
+        só dentro deste grupo.
+      </p>
 
       {/* Filtro multi-select de colaboradores */}
       <ColaboradorFilter
@@ -286,7 +298,7 @@ export default function Matriz() {
       {rowsComFiltroQuad.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Nenhum {aba === "supervisores" ? "supervisor" : "vendedor"} no escopo selecionado.
+            Nenhum {aba === "supervisores" ? "supervisor" : "vendedor"} neste grupo no período selecionado.
           </CardContent>
         </Card>
       ) : (

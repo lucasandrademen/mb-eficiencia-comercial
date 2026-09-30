@@ -11,6 +11,8 @@ import {
 } from "recharts";
 import { AlertTriangle, TrendingUp, CheckCircle } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { CicloPreserInfo } from "@/components/preser/CicloPreserInfo";
+import { cicloPreser } from "@/lib/preser/ciclo";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -152,9 +154,11 @@ export default function PreserMetas() {
     <>
       <PageHeader
         title="Metas e Gaps"
-        subtitle="Quanto você está deixando na mesa por não bater cada faixa."
+        subtitle={`Metas de ${cicloPreser(data.extrato.periodo).mesMetas}, pagas no PRESER de ${cicloPreser(data.extrato.periodo).mesPreser}. Quanto ficou na mesa por não bater cada faixa.`}
         actions={<PreserPeriodoFilter />}
       />
+
+      <CicloPreserInfo periodo={data.extrato.periodo} className="mb-4" />
 
       {/* Hero card: perda total */}
       {perdaTotal > 0 ? (
@@ -163,7 +167,7 @@ export default function PreserMetas() {
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
               Você está deixando{" "}
-              <span className="text-destructive">{fmtBRL(perdaTotal)}</span> na mesa este mês
+              <span className="text-destructive">{fmtBRL(perdaTotal)}</span> na mesa nas metas de {cicloPreser(data.extrato.periodo).mesMetas}
             </CardTitle>
             <CardDescription>
               Soma do ganho adicional se cada meta abaixo subir à próxima faixa.

@@ -6,44 +6,45 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 220 30% 12%;
+    /* ─── Padrão visual MB · azul petróleo #016690 ─────────────────────── */
+    --background: 214 50% 97%; /* #F4F7FC canvas */
+    --foreground: 197 89% 22%; /* #064E6B ink */
     --card: 0 0% 100%;
-    --card-foreground: 220 30% 12%;
+    --card-foreground: 197 89% 22%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 30% 12%;
-    --primary: 215 80% 48%;
+    --popover-foreground: 197 89% 22%;
+    --primary: 197 99% 28%; /* #016690 azul petróleo */
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 16% 93%;
-    --secondary-foreground: 220 30% 20%;
-    --muted: 220 16% 93%;
-    --muted-foreground: 220 10% 50%;
-    --accent: 200 70% 45%;
+    --secondary: 199 44% 94%; /* #EAF3F7 */
+    --secondary-foreground: 197 89% 22%;
+    --muted: 199 44% 94%;
+    --muted-foreground: 218 24% 48%; /* #5B7299 */
+    --accent: 196 89% 35%; /* #0A7CA8 brand */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 72% 55%;
+    --destructive: 0 64% 55%; /* #D64545 */
     --destructive-foreground: 0 0% 100%;
-    --success: 152 60% 42%;
+    --success: 154 67% 37%; /* #1F9D6B */
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;
+    --warning: 46 100% 42%; /* #D4A300 */
     --warning-foreground: 0 0% 100%;
-    --border: 220 16% 90%;
-    --input: 220 16% 90%;
-    --ring: 215 80% 48%;
+    --border: 214 44% 91%; /* #DCE6F2 */
+    --input: 214 44% 91%;
+    --ring: 197 99% 28%;
     --radius: 0.75rem;
 
-    --sidebar-background: 220 25% 14%;
-    --sidebar-foreground: 220 10% 85%;
-    --sidebar-primary: 215 80% 55%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 20% 20%;
-    --sidebar-accent-foreground: 220 10% 85%;
-    --sidebar-border: 220 20% 22%;
-    --sidebar-ring: 215 80% 55%;
+    --sidebar-background: 197 89% 22%; /* #064E6B navy-900 */
+    --sidebar-foreground: 200 25% 88%;
+    --sidebar-primary: 0 0% 100%; /* item ativo = fundo branco */
+    --sidebar-primary-foreground: 197 89% 22%;
+    --sidebar-accent: 197 65% 28%; /* hover */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 197 45% 30%;
+    --sidebar-ring: 0 0% 100%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(215, 80%, 48%), hsl(200, 70%, 45%));
-    --gradient-dark: linear-gradient(135deg, hsl(220, 25%, 14%), hsl(220, 30%, 8%));
-    --shadow-card: 0 1px 3px 0 hsl(220 30% 12% / 0.06), 0 1px 2px -1px hsl(220 30% 12% / 0.06);
-    --shadow-elevated: 0 4px 12px -2px hsl(220 30% 12% / 0.08), 0 2px 6px -2px hsl(220 30% 12% / 0.04);
+    --gradient-primary: linear-gradient(135deg, hsl(197 99% 28%), hsl(196 89% 35%));
+    --gradient-dark: linear-gradient(180deg, hsl(197 89% 22%), hsl(198 92% 16%));
+    --shadow-card: 0 1px 3px 0 hsl(197 89% 22% / 0.07), 0 8px 24px -6px hsl(197 89% 22% / 0.07);
+    --shadow-elevated: 0 4px 12px -2px hsl(197 89% 22% / 0.10), 0 2px 6px -2px hsl(197 89% 22% / 0.06);
   }
 }
 

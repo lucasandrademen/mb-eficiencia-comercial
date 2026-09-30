@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Area,
@@ -38,16 +38,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/contexts/DataContext";
 import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
-import { ENCARGOS_PCT } from "@/lib/calculations";
-import { listExtratos } from "@/lib/preser/api";
-import type { PreserExtrato } from "@/lib/preser/types";
+import { custoFolha } from "@/lib/calculations";
+import { receitaLiquidaMes } from "@/lib/dro/receita";
 import { Quadrante, QUADRANTES_ORDER } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const QUADRANT_COLORS: Record<Quadrante, string> = {
   Estrela: "hsl(152 60% 42%)",
   "Trator caro": "hsl(38 92% 50%)",
-  Potencial: "hsl(215 80% 48%)",
+  Potencial: "hsl(197 99% 28%)",
   "Alerta vermelho": "hsl(0 72% 55%)",
   "—": "hsl(220 10% 50%)",
 };
@@ -60,46 +59,36 @@ export default function Resumo() {
   const [selColabs, setSelColabs] = useState<Set<string>>(new Set());
   const [filtroOpen, setFiltroOpen] = useState(false);
 
-  // ─── Resultado real: receita PRESER líquida × folha completa ──────────────
-  const [extratos, setExtratos] = useState<PreserExtrato[]>([]);
-  useEffect(() => {
-    (async () => {
-      try {
-        setExtratos(await listExtratos());
-      } catch {
-        setExtratos([]);
-      }
-    })();
-  }, []);
-
-  // Série mensal do resultado real (todos os meses com PRESER e/ou folha)
+  // ─── Resultado real: Receita Líquida do DRO × folha completa ──────────────
+  // A Receita Líquida vem do DRO (o que de fato entrou no caixa da MB), não mais
+  // da comissão PRESER. Folha = bruto + encargos reais de todos os setores.
   const serieReal = useMemo(() => {
     const map = new Map<
       string,
-      { receitaLiquida: number; folhaTotal: number; temPreser: boolean; temFolha: boolean }
+      { receitaLiquida: number; folhaTotal: number; temReceita: boolean; temFolha: boolean }
     >();
     const get = (p: string) => {
       let v = map.get(p);
       if (!v) {
-        v = { receitaLiquida: 0, folhaTotal: 0, temPreser: false, temFolha: false };
+        v = { receitaLiquida: 0, folhaTotal: 0, temReceita: false, temFolha: false };
         map.set(p, v);
       }
       return v;
     };
-    for (const ex of extratos) {
-      const v = get(ex.periodo.slice(0, 7));
-      const contab = ex.valor_total_contabilizado ?? ex.valor_total_comissao ?? 0;
-      const impostos =
-        (ex.irrf_retido ?? 0) +
-        (ex.pis_retido ?? 0) +
-        (ex.cofins_retido ?? 0) +
-        (ex.csll_retido ?? 0);
-      v.receitaLiquida += contab - impostos;
-      v.temPreser = true;
+    // Meses com Receita Líquida no DRO (importado, ou embutido Jan–Abr no fallback).
+    const periodosDro =
+      dataset.dro?.meses2026.filter((m) => m.receitaLiquida !== 0).map((m) => m.periodo) ??
+      ["2026-01", "2026-02", "2026-03", "2026-04"];
+    for (const p of periodosDro) {
+      const rl = receitaLiquidaMes(dataset.dro, p);
+      if (rl <= 0) continue;
+      const v = get(p);
+      v.receitaLiquida += rl;
+      v.temReceita = true;
     }
     for (const f of dataset.folha ?? []) {
       const v = get(f.periodo);
-      v.folhaTotal += f.bruto * (1 + ENCARGOS_PCT);
+      v.folhaTotal += custoFolha(f);
       v.temFolha = true;
     }
     return [...map.entries()]
@@ -111,21 +100,30 @@ export default function Resumo() {
         resultado: v.receitaLiquida - v.folhaTotal,
         margem: v.receitaLiquida > 0 ? (v.receitaLiquida - v.folhaTotal) / v.receitaLiquida : 0,
       }));
-  }, [extratos, dataset.folha]);
+  }, [dataset.dro, dataset.folha]);
 
-  // KPIs do resultado real no(s) período(s) selecionado(s)
+  const droImportado = !!dataset.dro;
+
+  // KPIs do resultado real no(s) período(s) selecionado(s).
+  // Receita, Folha, Resultado e Margem usam SÓ meses com Receita (DRO) E folha —
+  // o mesmo recorte do gráfico — senão a receita de um mês sem folha (ou vice-versa)
+  // infla o resultado e nada reconcilia.
   const kpisReal = useMemo(() => {
-    const meses =
+    const base =
       periodosSelecionados.length === 0
         ? serieReal
         : serieReal.filter((m) => periodosSelecionados.includes(m.periodo));
-    const receitaLiquida = meses.reduce((s, m) => s + m.receitaLiquida, 0);
-    const folhaTotal = meses.reduce((s, m) => s + m.folhaTotal, 0);
+    const completos = base.filter((m) => m.temReceita && m.temFolha);
+    const receitaLiquida = completos.reduce((s, m) => s + m.receitaLiquida, 0);
+    const folhaTotal = completos.reduce((s, m) => s + m.folhaTotal, 0);
     const resultado = receitaLiquida - folhaTotal;
     const margem = receitaLiquida > 0 ? resultado / receitaLiquida : 0;
-    const semPreser = !meses.some((m) => m.temPreser);
-    const semFolha = !meses.some((m) => m.temFolha);
-    return { receitaLiquida, folhaTotal, resultado, margem, semPreser, semFolha };
+    const semReceita = !base.some((m) => m.temReceita);
+    const semFolha = !base.some((m) => m.temFolha);
+    const semCompletos = completos.length === 0;
+    // Meses no escopo com só um dos dois (receita OU folha) — ficam fora do resultado.
+    const mesesIncompletos = base.filter((m) => m.temReceita !== m.temFolha).length;
+    return { receitaLiquida, folhaTotal, resultado, margem, semReceita, semFolha, semCompletos, mesesIncompletos };
   }, [serieReal, periodosSelecionados]);
 
   const rowsPorEscopo = useMemo(() => {
@@ -345,64 +343,93 @@ export default function Resumo() {
         </Card>
       )}
 
-      {/* ─── Bloco 1: Resultado real (PRESER × Folha) ───────────────────────── */}
+      {/* ─── Bloco 1: Resultado real (Receita Líquida DRO × Folha) ──────────── */}
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           Resultado real da operação
         </h2>
         <Link
-          to="/preser-folha"
+          to="/custos-setor"
           className="text-xs font-medium text-primary underline-offset-2 hover:underline"
         >
           ver análise completa →
         </Link>
       </div>
-      {kpisReal.semPreser ? (
+      {kpisReal.semReceita ? (
         <div className="mb-5 rounded-xl border border-warning/40 bg-warning/10 p-4 text-xs">
-          <p className="font-semibold text-warning">Sem extrato PRESER no(s) mês(es) selecionado(s).</p>
+          <p className="font-semibold text-warning">Sem Receita Líquida (DRO) no(s) mês(es) selecionado(s).</p>
           <p className="mt-0.5 text-muted-foreground">
-            O resultado real (comissão recebida − folha completa) depende do extrato PRESER.{" "}
-            <Link to="/preser/importar" className="underline hover:text-foreground">
-              Importe em /preser/importar
+            O resultado real (Receita Líquida do DRO − folha completa) depende do DRO importado.{" "}
+            <Link to="/upload" className="underline hover:text-foreground">
+              Importe o DRO em /upload
+            </Link>
+            .
+          </p>
+        </div>
+      ) : kpisReal.semCompletos ? (
+        <div className="mb-5 rounded-xl border border-warning/40 bg-warning/10 p-4 text-xs">
+          <p className="font-semibold text-warning">
+            {kpisReal.semFolha
+              ? "Sem folha no(s) mês(es) com Receita Líquida (DRO)."
+              : "Nenhum mês com DRO e folha no mesmo período."}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            O resultado real cruza Receita Líquida (DRO) × folha do mesmo mês. Importe o par (DRO + folha) do(s)
+            mesmo(s) mês(es) em{" "}
+            <Link to="/upload" className="underline hover:text-foreground">
+              /upload
             </Link>
             .
           </p>
         </div>
       ) : (
-        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <HeroCard
-            label="Receita PRESER (líquida)"
-            value={fmtBRL(kpisReal.receitaLiquida, { compact: true })}
-            sub="Comissão contabilizada − impostos retidos"
-            icon={HandCoins}
-            accent="primary"
-          />
-          <HeroCard
-            label="Folha total (c/ encargos)"
-            value={kpisReal.semFolha ? "—" : fmtBRL(kpisReal.folhaTotal, { compact: true })}
-            sub={kpisReal.semFolha ? "Importe a folha do período" : "Todos os setores, bruto + encargos"}
-            icon={Receipt}
-            accent="destructive"
-          />
-          <HeroCard
-            label="Resultado real"
-            value={kpisReal.semFolha ? "—" : fmtBRL(kpisReal.resultado, { compact: true })}
-            sub="Receita líquida − folha completa"
-            icon={Scale}
-            accent={kpisReal.resultado >= 0 ? "success" : "destructive"}
-          />
-          <HeroCard
-            label="Margem"
-            value={kpisReal.semFolha ? "—" : fmtPct(kpisReal.margem)}
-            sub={
-              kpisReal.semFolha
-                ? undefined
-                : `Folha consome ${fmtPct(kpisReal.folhaTotal / kpisReal.receitaLiquida, 0)} da comissão`
-            }
-            icon={Percent}
-            accent={kpisReal.margem >= 0.2 ? "success" : kpisReal.margem >= 0 ? "accent" : "destructive"}
-          />
-        </div>
+        <>
+          {(!droImportado || kpisReal.mesesIncompletos > 0) && (
+            <p className="mb-2 text-xs text-muted-foreground">
+              {!droImportado && (
+                <>
+                  Receita do <strong className="text-foreground">DRO embutido (Jan–Abr)</strong> — importe o seu em{" "}
+                  <Link to="/upload" className="underline hover:text-foreground">
+                    /upload
+                  </Link>
+                  .{" "}
+                </>
+              )}
+              {kpisReal.mesesIncompletos > 0 &&
+                `${kpisReal.mesesIncompletos} mês(es) fora do resultado por faltar DRO ou folha no período.`}
+            </p>
+          )}
+          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <HeroCard
+              label="Receita Líquida (DRO)"
+              value={fmtBRL(kpisReal.receitaLiquida, { compact: true })}
+              sub="Quanto de fato entrou no caixa da MB"
+              icon={HandCoins}
+              accent="primary"
+            />
+            <HeroCard
+              label="Folha total (c/ encargos)"
+              value={fmtBRL(kpisReal.folhaTotal, { compact: true })}
+              sub="Todos os setores, bruto + encargos"
+              icon={Receipt}
+              accent="destructive"
+            />
+            <HeroCard
+              label="Resultado real"
+              value={fmtBRL(kpisReal.resultado, { compact: true })}
+              sub="Receita Líquida (DRO) − folha completa"
+              icon={Scale}
+              accent={kpisReal.resultado >= 0 ? "success" : "destructive"}
+            />
+            <HeroCard
+              label="Margem"
+              value={fmtPct(kpisReal.margem)}
+              sub={`Folha consome ${fmtPct(kpisReal.folhaTotal / kpisReal.receitaLiquida, 0)} da Receita Líquida`}
+              icon={Percent}
+              accent={kpisReal.margem >= 0.2 ? "success" : kpisReal.margem >= 0 ? "accent" : "destructive"}
+            />
+          </div>
+        </>
       )}
 
       {/* ─── Bloco 2: Operação comercial (faturamento intermediado) ────────── */}
@@ -473,8 +500,8 @@ export default function Resumo() {
                   <AreaChart data={serieMensal} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gFat" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(215 80% 48%)" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="hsl(215 80% 48%)" stopOpacity={0} />
+                        <stop offset="5%" stopColor="hsl(197 99% 28%)" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="hsl(197 99% 28%)" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="gCusto" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="hsl(0 72% 55%)" stopOpacity={0.3} />
@@ -493,7 +520,7 @@ export default function Resumo() {
                       type="monotone"
                       dataKey="faturamento"
                       name="Faturamento"
-                      stroke="hsl(215 80% 48%)"
+                      stroke="hsl(197 99% 28%)"
                       fill="url(#gFat)"
                       strokeWidth={2}
                     />
@@ -602,18 +629,18 @@ export default function Resumo() {
           <CardHeader>
             <CardTitle>Resultado real por mês</CardTitle>
             <CardDescription>
-              Comissão PRESER líquida menos folha completa — empresa toda, sem filtros de equipe.
+              Receita Líquida (DRO) menos folha completa — empresa toda, sem filtros de equipe.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {serieReal.filter((m) => m.temPreser && m.temFolha).length === 0 ? (
+            {serieReal.filter((m) => m.temReceita && m.temFolha).length === 0 ? (
               <p className="p-6 text-center text-sm text-muted-foreground">
-                Sem mês com PRESER e folha importados.
+                Sem mês com DRO e folha importados.
               </p>
             ) : (
               <div className="h-[220px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={serieReal.filter((m) => m.temPreser && m.temFolha)}>
+                  <BarChart data={serieReal.filter((m) => m.temReceita && m.temFolha)}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis
                       dataKey="label"
@@ -632,7 +659,7 @@ export default function Resumo() {
                     />
                     <Bar dataKey="resultado" radius={[4, 4, 0, 0]}>
                       {serieReal
-                        .filter((m) => m.temPreser && m.temFolha)
+                        .filter((m) => m.temReceita && m.temFolha)
                         .map((d, i) => (
                           <Cell key={i} fill={d.resultado >= 0 ? "hsl(152 60% 42%)" : "hsl(0 72% 55%)"} />
                         ))}

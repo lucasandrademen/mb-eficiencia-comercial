@@ -35,7 +35,10 @@ export async function parsePreserPdf(file: File, periodo: string): Promise<BaseV
   const pdf = await loadingTask.promise;
 
   const rows: BaseVendedor[] = [];
-  const vistos = new Set<string>();
+  // Um vendedor (mesmo SETOR + NOME) pode aparecer em VÁRIOS blocos/segmentos do
+  // Consolidado (ex.: segmento principal + bebidas). O faturamento dele é a SOMA
+  // de todos os blocos — por isso agregamos por chave em vez de descartar repetições.
+  const porChave = new Map<string, BaseVendedor>();
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
@@ -93,17 +96,22 @@ export async function parsePreserPdf(file: File, periodo: string): Promise<BaseV
       if (faturamento <= 0) continue;
 
       const key = `${setor}|${nome.toUpperCase()}`;
-      if (vistos.has(key)) continue;
-      vistos.add(key);
-
-      rows.push({
+      const existente = porChave.get(key);
+      if (existente) {
+        // Mesmo vendedor em outro bloco/segmento → soma o faturamento.
+        existente.faturamento += faturamento;
+        continue;
+      }
+      const novo: BaseVendedor = {
         periodo,
         vendedor_id: setor,
         vendedor_nome: nome,
         supervisor: "",
         faturamento,
         custo: 0,
-      });
+      };
+      porChave.set(key, novo);
+      rows.push(novo);
     }
   }
 

@@ -104,13 +104,14 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const allText = normalizeCriterioInvertido(pages.flatMap((p) => p.lines).join("\n"));
 
   // ── 2.1 Cabeçalho: período ─────────────────────────────────────────────
-  // "Apuração: YYYY/M" no PDF refere-se ao CICLO que FECHA dia 19 do mês M.
-  // O ciclo PRESER é "mês M-1 dia 20" até "mês M dia 19", então a atividade
-  // comercial é do mês M-1. Ex: Apuração 2026/4 = ciclo Mar/20 a Abr/19 =
-  // atividade de MARÇO. Salvamos como mês M-1.
+  // "Apuração: YYYY/M" no PDF = MÊS DO PRESER (é assim que o extrato é salvo).
+  // Ciclo: faturamento de 20/(M-1) a 19/M; bônus de metas = metas do mês M-1.
+  // Ex: Apuração 2026/9 = PRESER de Setembro (fat. 20/08–19/09, metas de Agosto).
+  // Ver src/lib/preser/ciclo.ts.
   // Formato A: "Apuração: 2026/4"   (ano/mês logo após o rótulo)
   // Formato B: "Mês Ano  4 2026  / Apuração:"  (valores antes do rótulo)
-  const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\/\s*(\d{1,2})/);
+  // (o PDF traz espaços antes da barra: "Apuração:   2026   / 7")
+  const mA = allText.match(/Apura[çc][ãa]o:\s*(\d{4})\s*\/\s*(\d{1,2})/);
   const mB = allText.match(/M[êe]s\s+Ano\s+(\d{1,2})\s+(\d{4})\s*\/\s*Apura[çc][ãa]o/i);
 
   let ano: number | null = null;
@@ -123,16 +124,10 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
     ano = parseInt(mB[2], 10);
   }
 
-  // Recua 1 mês (com virada de ano se preciso) — atividade comercial é M-1.
   // Se o parser NÃO detectar o período, deixa vazio para o usuário escolher
   // no seletor de mês (antes isto chutava 2025-12 e gerava dados errados).
   let periodo = "";
-  if (ano !== null && mesNum !== null) {
-    mesNum -= 1;
-    if (mesNum <= 0) {
-      mesNum = 12;
-      ano -= 1;
-    }
+  if (ano !== null && mesNum !== null && mesNum >= 1 && mesNum <= 12) {
     periodo = `${ano}-${String(mesNum).padStart(2, "0")}-01`;
   }
 
@@ -149,7 +144,7 @@ export async function parsePreserExtratoPdf(file: File): Promise<ParsedPreser> {
   const drops = sec20 ? parseDrops(sec20.body) : [];
 
   // ── 2.5 Metas (Recomendadores + VBC + Cobertura) ───────────────────────
-  const metas = parseMetas(criterioSections);
+  const metas = [...parseMetas(criterioSections), ...parseCoberturasCategoria(criterioSections)];
 
   // ── 2.6 Outros (todos os demais critérios com "Valor total da comissão")
   const outros = parseOutros(criterioSections);
@@ -461,6 +456,166 @@ function parseMetas(sections: CriterioSection[]) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 6b. Cobertura por CATEGORIA (a partir de Ago/2026: critérios 114, 115, …)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * A Nestlé trocou a Cobertura por BU (crit. 4/6/12/63) por uma Cobertura por
+ * categoria ("Cobertura Total - BISCOITOS", "… - MAGGI"…), cada uma com
+ * objetivo de clientes e faixas próprias (Mínimo/Meta/Ideal e % de cada faixa).
+ * Paga % atingido × Efetivo Mês da categoria.
+ */
+function ehCoberturaCategoria(sec: CriterioSection): boolean {
+  return (
+    !COBERTOS.has(sec.codigo) &&
+    /^Cobertura Total\s*-/i.test(sec.nome) &&
+    !PURINA_KEYWORDS.test(sec.nome)
+  );
+}
+
+function parseCoberturasCategoria(sections: CriterioSection[]) {
+  const porCodigo = new Map<number, CriterioSection[]>();
+  for (const sec of sections) {
+    if (!ehCoberturaCategoria(sec)) continue;
+    const l = porCodigo.get(sec.codigo) ?? [];
+    l.push(sec);
+    porCodigo.set(sec.codigo, l);
+  }
+
+  const out: ParsedPreser["metas"] = [];
+  for (const [codigo, secs] of porCodigo) {
+    const valor = secs.find((s) => /Valor total da comiss[ãa]o:/.test(s.body)) ?? secs[0];
+    const body = valor.body;
+    const nome = valor.nome.slice(0, 200);
+    const categoria = nome.replace(/^Cobertura Total\s*-\s*/i, "").replace(/^\d+\s*-\s*/, "").trim();
+
+    // Faixas: "Estipulado 1689 1757 1790" + "0,700% 1,000% 1,300%" (ordem embaralhada no PDF)
+    let fx: { min: number; meta: number; ideal: number; pMin: number; pMeta: number; pIdeal: number } | null = null;
+    for (const sec of secs) {
+      const i = sec.body.search(/Estipulado/);
+      if (i < 0) continue;
+      const trecho = sec.body.slice(i, i + 160);
+      const ints = [...trecho.matchAll(/(?:^|\s)(\d{1,3}(?:\.\d{3})*|\d+)(?=\s|$)/g)].map((m) => parseInt(m[1].replace(/\./g, ""), 10));
+      const pcts = [...trecho.matchAll(/([\d.]+,\d+)%/g)].map((m) => parsePctBR(m[1]));
+      if (ints.length >= 3 && pcts.length >= 3) {
+        const [a, b2, c] = ints.slice(0, 3).sort((x, y) => x - y);
+        const [pa, pb, pc] = pcts.slice(0, 3).sort((x, y) => x - y);
+        fx = { min: a, meta: b2, ideal: c, pMin: pa, pMeta: pb, pIdeal: pc };
+        break;
+      }
+    }
+
+    // Formato por SKU (Biscoitos, Chocolates, Garoto…): uma linha por SKU, cada uma
+    // com objetivo e % próprios, pagos sobre o Efetivo Mês da categoria.
+    //   "Efetivo Mês (R$) 1.033.411,410"
+    //   "59 - Linha seca - KIT KAT 4 FINGERS 891 675 0,000% 0,000"
+    if (/Categoria\s+Objetivo\s+Efetivo/.test(body)) {
+      const mEfCat = body.match(/Efetivo M[êe]s \(R\$\)\s*([\d.]+,\d+)/);
+      const efCat = mEfCat ? parseBRL(mEfCat[1]) : null;
+      // Quebra de linha/página às vezes sobe um dos números sozinho para a linha de cima:
+      //   "769" + "300 - Garoto - BATON 880 0,000% 0,000"  → junta os dois
+      const linhasSku = body.split("\n");
+      for (let i = 1; i < linhasSku.length; i++) {
+        if (/^\d[\d.]*$/.test(linhasSku[i - 1].trim()) &&
+            /^\d+\s*-\s*.+?\s\d[\d.]*\s+[\d.]+,\d+%\s+-?[\d.]+,\d+\s*$/.test(linhasSku[i]) &&
+            !/^\d+\s*-\s*.+?\s\d[\d.]*\s+\d[\d.]*\s+[\d.]+,\d+%/.test(linhasSku[i])) {
+          linhasSku[i] = "§" + linhasSku[i].replace(/\s(\d[\d.]*)(\s+[\d.]+,\d+%)/, ` ${linhasSku[i - 1].trim()} $1$2`);
+          linhasSku[i - 1] = "";
+        }
+      }
+      const reSku = /^(§?)(\d+)\s*-\s*(.+?)\s+(\d[\d.]*)\s+(\d[\d.]*)\s+([\d.]+,\d+)%\s+(-?[\d.]+,\d+)\s*$/gm;
+      for (const r of linhasSku.join("\n").matchAll(reSku)) {
+        const remontada = r[1] === "§";
+        const sku = r[3].replace(/^(Linha seca|Garoto|Professional[^-]*)\s*-\s*/i, "").trim();
+        const n1 = parseBRL(r[4]);
+        const n2 = parseBRL(r[5]);
+        const pctSku = parsePctBR(r[6]);
+        // linha remontada da quebra: a ordem pode ter invertido; se não pagou,
+        // o menor número é o efetivo. Linha íntegra: Objetivo, Efetivo.
+        const [objSku, efSku] = remontada && !pctSku ? [Math.max(n1, n2), Math.min(n1, n2)] : [n1, n2];
+        out.push({
+          criterio_codigo: codigo,
+          criterio_nome: `${nome} · ${sku}`.slice(0, 200),
+          bu: `${categoria} · ${sku}`,
+          tipo: "Cobertura",
+          objetivo_minimo: null,
+          objetivo_meta: objSku,
+          objetivo_ideal: null,
+          pct_minimo: null,
+          pct_meta: null,
+          pct_ideal: null,
+          efetivo_fiscal: efSku,
+          efetivo_mes: efCat,
+          pct_atingido: pctSku,
+          comissao: parseBRL(r[7]),
+        });
+      }
+      continue;
+    }
+
+    let objetivo: number | null = null;
+    let efetivo: number | null = null;
+    let pct: number | null = null;
+    let efetivoMes: number | null = null;
+
+    // Formato A: "220 226 0,520% 1.529.629,100 7.954,071" (às vezes quebrado em 2 linhas)
+    const mA = body.match(/(\d[\d.]*)\s+(\d[\d.]*)\s+([\d.]+,\d+)%\s+([\d.]+,\d+)\s+(-?[\d.]+,\d+)/);
+    // Formato B (por SKU): "Efetivo Mês (R$) 1.719.450,080" + "531 - … 951 984 1,300% 22.352,851"
+    const mEfMes = body.match(/Efetivo M[êe]s \(R\$\)\s*([\d.]+,\d+)/);
+    const mB = body.match(/(\d[\d.]*)\s+(\d[\d.]*)\s+([\d.]+,\d+)%\s+(-?[\d.]+,\d+)\s*(?:\n|$)/);
+    let x1: number | null = null;
+    let x2: number | null = null;
+    if (mA) {
+      x1 = parseBRL(mA[1]);
+      x2 = parseBRL(mA[2]);
+      pct = parsePctBR(mA[3]);
+      efetivoMes = parseBRL(mA[4]);
+    } else if (mB) {
+      x1 = parseBRL(mB[1]);
+      x2 = parseBRL(mB[2]);
+      pct = parsePctBR(mB[3]);
+      efetivoMes = mEfMes ? parseBRL(mEfMes[1]) : null;
+    }
+    if (x1 != null && x2 != null) {
+      if (fx && (x1 === fx.meta || x2 === fx.meta)) {
+        // a faixa "Meta" identifica qual número é o objetivo
+        objetivo = fx.meta;
+        efetivo = x1 === fx.meta ? x2 : x1;
+      } else if (!pct) {
+        // não pagou → o efetivo ficou abaixo do objetivo
+        objetivo = Math.max(x1, x2);
+        efetivo = Math.min(x1, x2);
+      } else {
+        objetivo = x1;
+        efetivo = x2;
+      }
+    }
+
+    const comissao = extractComissaoTotal(body) ?? 0;
+    // Categorias que não se aplicam vêm com objetivo 999.999.999 e nada pago
+    if ((objetivo ?? 0) >= 999_999_999 && !comissao) continue;
+
+    out.push({
+      criterio_codigo: codigo,
+      criterio_nome: nome,
+      bu: categoria,
+      tipo: "Cobertura",
+      objetivo_minimo: fx?.min ?? null,
+      objetivo_meta: objetivo,
+      objetivo_ideal: fx?.ideal ?? null,
+      pct_minimo: fx?.pMin ?? null,
+      pct_meta: fx?.pMeta ?? null,
+      pct_ideal: fx?.pIdeal ?? null,
+      efetivo_fiscal: efetivo,
+      efetivo_mes: efetivoMes,
+      pct_atingido: pct,
+      comissao,
+    });
+  }
+  return out;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // 7. Parser Outros (qualquer crit. com "Valor total da comissão")
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -481,6 +636,7 @@ function parseOutros(sections: CriterioSection[]) {
 
   for (const sec of sections) {
     if (COBERTOS.has(sec.codigo)) continue;
+    if (ehCoberturaCategoria(sec)) continue; // tratado como meta (Cobertura por categoria)
     if (vistos.has(sec.codigo)) continue;
     if (PURINA_KEYWORDS.test(sec.nome)) continue; // ignora qualquer "outro" relacionado a Purina
 
@@ -507,20 +663,96 @@ function parseOutros(sections: CriterioSection[]) {
         ? linhas[1].slice(0, 200) // descrição textual logo após "Critério: X..."
         : null;
 
+    const base = extrairBase(linhas);
+
     out.push({
       criterio_codigo: sec.codigo,
       criterio_nome: sec.nome.slice(0, 200),
       tipo_servico,
       bu: null,
-      base_calculo: null,
-      base_unidade: null,
-      rs_unitario: null,
+      base_calculo: base?.base ?? null,
+      base_unidade: base?.unidade ?? null,
+      rs_unitario: base?.rs ?? null,
       comissao,
-      observacao,
+      observacao: base?.obs ?? observacao,
       contabilizado: !isDemonstrativo,
     });
   }
   return out;
+}
+
+const NUM_BR = /^-?[\d.]+,\d+$/;
+const INT_BR = /^\d[\d.]*$/;
+const toInt = (t: string) => parseInt(t.replace(/\./g, ""), 10);
+
+/**
+ * Base de cálculo de um critério "outros", lida das linhas do corpo:
+ * faturamento (Garantia/Seguro), peso (Entrega), pallets (Armazenagem/Refrigerado),
+ * visitas (Farma/PAC/RiV/Prospectores) e merchandisers. null se não reconhecer.
+ */
+function extrairBase(
+  linhas: string[],
+): { base: number; unidade: string; rs: number | null; obs?: string } | null {
+  const txt = linhas.join("\n");
+
+  // Garantia de crédito / Seguros: "Efetivo Mês (R$) 13.352.990,400 % de Garantia 0,600%"
+  // (alguns meses trazem os rótulos numa linha e os valores na seguinte)
+  const mEf =
+    txt.match(/Efetivo M[êe]s \(R\$\)\s*([\d.]+,\d+)\s*%\s*de\s*\w+\s*([\d.]+,\d+)%/) ??
+    txt.match(/Efetivo M[êe]s \(R\$\)\s*%\s*de\s*\w+\s*\n\s*([\d.]+,\d+)\s+([\d.]+,\d+)%/);
+  if (mEf) return { base: parseBRL(mEf[1]), unidade: "R$", rs: parseBRL(mEf[2]) / 100 };
+
+  // Entrega: "Peso Bruto 411.051,244 R$/Kg: 0,524"
+  const mPeso =
+    txt.match(/Peso Bruto\s*([\d.]+,\d+)\s*R\$\/Kg:?\s*([\d.]+,\d+)/i) ??
+    txt.match(/Peso Bruto\s*R\$\/Kg:?\s*\n\s*([\d.]+,\d+)\s+([\d.]+,\d+)/i);
+  if (mPeso) return { base: parseBRL(mPeso[1]), unidade: "kg", rs: parseBRL(mPeso[2]) };
+
+  const iHead = linhas.findIndex((l) => /Pallets/.test(l) && /Calc\.\s*Comiss/.test(l));
+  if (iHead >= 0) {
+    // Linhas de pallets: "89,430% 250 666,140 ..." (Armazenagem) ou "45 98,060 ..." (Refrigerado)
+    let pallets = 0;
+    for (const l of linhas.slice(iHead + 1)) {
+      if (/^(Valor total|\*|Crit)/.test(l)) break;
+      const t = l.split(" ");
+      if (t.length < 4 || !NUM_BR.test(t[t.length - 1])) continue;
+      const q = /%$/.test(t[0]) ? t[1] : t[0];
+      if (INT_BR.test(q)) pallets += toInt(q);
+    }
+    if (pallets > 0) return { base: pallets, unidade: "pallets", rs: null };
+  }
+
+  const iVis = linhas.findIndex((l) => /Canal\s+Objetivo\s+Efetivo/.test(l));
+  if (iVis >= 0) {
+    // "11 - Farma Curva B 16 16 100,000% ..." → objetivo, efetivo
+    let obj = 0;
+    let ef = 0;
+    for (const l of linhas.slice(iVis + 1)) {
+      if (/^(Valor total|\*|Crit)/.test(l)) break;
+      const m = l.match(/^\d+\s*-\s*.+?\s(\d[\d.]*)\s+(\d[\d.]*)\s+[\d.]+,\d+%/);
+      if (m) {
+        obj += toInt(m[1]);
+        ef += toInt(m[2]);
+      }
+    }
+    if (obj || ef) return { base: ef, unidade: "visitas", rs: null, obs: `Objetivo ${obj} visitas · efetivo ${ef}` };
+  }
+
+  // Merchandising: "28 28 5.157,510 144.410,280 1 1 13.027,390 13.027,390" (Qtd. Max, Qtd. Cons., …)
+  const iMer = linhas.findIndex((l) => /Qtd\.\s*Max/.test(l) && /Total Pago/.test(l));
+  if (iMer >= 0 && linhas[iMer + 1]) {
+    let cons = 0;
+    const t = linhas[iMer + 1].split(" ");
+    if (INT_BR.test(t[0])) {
+      for (let i = 0; i + 3 < t.length; i += 4) if (INT_BR.test(t[i + 1])) cons += toInt(t[i + 1]);
+    } else if (linhas[iMer + 2]) {
+      // valores numa linha e quantidades na seguinte: "24 24 1 1" (Max, Cons, Max, Cons)
+      const q = linhas[iMer + 2].split(" ");
+      for (let i = 1; i < q.length; i += 2) if (INT_BR.test(q[i])) cons += toInt(q[i]);
+    }
+    if (cons > 0) return { base: cons, unidade: "pessoas", rs: null };
+  }
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

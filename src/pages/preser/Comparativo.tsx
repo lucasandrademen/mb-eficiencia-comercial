@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -9,545 +10,852 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  Equal,
-  TrendingDown,
-  TrendingUp,
-  DollarSign,
-  Target,
-} from "lucide-react";
+import { ArrowDownRight, ArrowLeftRight, ArrowUpRight, Equal, Loader2, Search } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Table, TBody, Td, Th, THead, Tr } from "@/components/ui/table";
 import { usePreserData } from "@/contexts/PreserDataContext";
-import { fmtBRL, fmtPct, periodoLabel } from "@/lib/format";
-import type { PreserMeta } from "@/lib/preser/types";
+import { listExtratosCompletos } from "@/lib/preser/api";
+import { cicloPreser } from "@/lib/preser/ciclo";
+import { FONTES, fonteDoOutro, somarFontes, type FonteKey } from "@/lib/preser/fontes";
+import { grupoCanonico, nomesAntigos } from "@/lib/preser/renomeados";
+import {
+  CATEGORIA_NOMES,
+  type PreserCategoriaCodigo,
+  type PreserExtratoCompleto,
+  type PreserMeta,
+} from "@/lib/preser/types";
+import { fmtBRL, fmtNum, fmtPct, periodoLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { PreserEmptyState } from "./PreserEmptyState";
 
-type MetaComparada = {
+// Padrão MB (variante App)
+const C_BASE = "#5FB0CE";
+const C_COMP = "#016690";
+const C_BOM = "#1F9D6B";
+const C_RISCO = "#D64545";
+const C_GRADE = "#DCE6F2";
+const C_TINTA = "#5B7299";
+
+const NOME_FONTE = Object.fromEntries(FONTES.map((f) => [f.key, f.nome])) as Record<FonteKey, string>;
+
+/**
+ * Um item comparável do extrato (linha de SKU, canal de drop, meta ou critério),
+ * somado por chave nos dois meses.
+ */
+interface Item {
   key: string;
-  criterio_codigo: number | null;
-  criterio_nome: string;
-  bu: string;
-  tipo: "VBC" | "Cobertura" | "Recomendador";
-  // mês anterior
-  efetivo_ant: number;
-  meta_ant: number;
-  pct_ant: number;
-  comissao_ant: number;
-  // mês atual
-  efetivo_atu: number;
-  meta_atu: number;
-  pct_atu: number;
-  comissao_atu: number;
-  // deltas
-  delta_pct: number; // delta de % atingimento (pp)
-  delta_comissao: number; // delta R$ (positivo = ganhou mais)
-  delta_meta: number; // delta R$ do objetivo
-  status: "melhorou" | "piorou" | "estavel" | "nova_meta" | "perdeu_meta";
-};
+  fonte: FonteKey;
+  nome: string;
+  detalhe: string;
+  a: number;
+  b: number;
+  delta: number;
+  motivo: string;
+  /** false = linha fora do total do extrato (ex.: Entrega NiM via CT-e) */
+  noTotal: boolean;
+}
 
-const TIPO_COLORS = {
-  VBC: "hsl(215 80% 48%)",
-  Cobertura: "hsl(38 92% 50%)",
-  Recomendador: "hsl(0 72% 55%)",
-};
+// ─── Motivos ──────────────────────────────────────────────────────────────
 
-export default function PreserComparativo() {
-  const { loading, atual, anterior, extratos } = usePreserData();
-  const [filtroTipo, setFiltroTipo] = useState<string>("all");
-  const [filtroBU, setFiltroBU] = useState<string>("all");
-  const [filtroStatus, setFiltroStatus] = useState<string>("all");
+const pctTxt = (v: number) => fmtPct(v, 1);
+const brlC = (v: number) => fmtBRL(v, { compact: true });
+function variacao(a: number, b: number) {
+  if (!a) return b ? "novo" : "";
+  const p = (b - a) / Math.abs(a);
+  return `${p >= 0 ? "+" : ""}${fmtPct(p)}`;
+}
 
-  const metasComparadas = useMemo<MetaComparada[]>(() => {
-    if (!atual || !anterior) return [];
+function faixaMeta(m: PreserMeta | undefined): { txt: string; pct: number | null } {
+  if (!m) return { txt: "sem meta", pct: null };
+  const ef = m.efetivo_fiscal ?? 0;
+  if (m.tipo === "Recomendador") return { txt: pctTxt(ef), pct: ef };
+  const meta = m.objetivo_meta ?? 0;
+  const pct = meta > 0 ? ef / meta : null;
+  // Faixa pela taxa paga no extrato (0,35% mínimo · 0,50% meta · 0,65% ideal)
+  const taxa = m.pct_atingido ?? 0;
+  const faixa = !taxa || !(m.comissao ?? 0) ? "não pagou" : `taxa ${fmtPct(taxa, 2)}`;
+  return { txt: `${pct != null ? pctTxt(pct) : "—"} da meta (${faixa})`, pct };
+}
 
-    // Indexa por (codigo, bu, tipo) — chave que identifica a mesma meta entre meses
-    const keyOf = (m: PreserMeta) =>
-      `${m.criterio_codigo ?? "?"}|${m.bu ?? "?"}|${m.tipo ?? "?"}`;
+// ─── Montagem dos itens ───────────────────────────────────────────────────
 
-    const idxAnt = new Map<string, PreserMeta>();
-    for (const m of anterior.metas) idxAnt.set(keyOf(m), m);
+type Linha = { key: string; fonte: FonteKey; nome: string; detalhe: string; noTotal: boolean; com: number };
 
-    const idxAtu = new Map<string, PreserMeta>();
-    for (const m of atual.metas) idxAtu.set(keyOf(m), m);
+function montarItens(A: PreserExtratoCompleto, B: PreserExtratoCompleto): Item[] {
+  const itens: Item[] = [];
 
-    // União de todas as chaves
-    const todas = new Set<string>([...idxAnt.keys(), ...idxAtu.keys()]);
-
-    const out: MetaComparada[] = [];
-    for (const k of todas) {
-      const mAnt = idxAnt.get(k);
-      const mAtu = idxAtu.get(k);
-      const ref = mAtu ?? mAnt!;
-      if (!ref.tipo) continue;
-
-      const ef_a = mAnt?.efetivo_fiscal ?? 0;
-      const ef_t = mAtu?.efetivo_fiscal ?? 0;
-      const met_a = mAnt?.objetivo_meta ?? 0;
-      const met_t = mAtu?.objetivo_meta ?? 0;
-
-      // % atingimento depende do tipo
-      let pct_a = 0;
-      let pct_t = 0;
-      if (ref.tipo === "Recomendador") {
-        pct_a = ef_a; // já é uma %
-        pct_t = ef_t;
-      } else {
-        pct_a = met_a > 0 ? ef_a / met_a : 0;
-        pct_t = met_t > 0 ? ef_t / met_t : 0;
+  // Soma linhas por chave e compara
+  const cruzar = <T,>(
+    rsA: T[],
+    rsB: T[],
+    linha: (r: T) => Linha,
+    motivo: (a: T[], b: T[]) => string,
+  ) => {
+    const grupos = new Map<string, { l: Linha; a: T[]; b: T[] }>();
+    for (const [lado, rs] of [
+      ["a", rsA],
+      ["b", rsB],
+    ] as const) {
+      for (const r of rs) {
+        const l = linha(r);
+        const g = grupos.get(l.key) ?? { l, a: [], b: [] };
+        g[lado].push(r);
+        grupos.set(l.key, g);
       }
-
-      const com_a = mAnt?.comissao ?? 0;
-      const com_t = mAtu?.comissao ?? 0;
-
-      const delta_comissao = com_t - com_a;
-      const delta_pct = pct_t - pct_a;
-
-      let status: MetaComparada["status"];
-      if (!mAnt) status = "nova_meta";
-      else if (!mAtu) status = "perdeu_meta";
-      else if (Math.abs(delta_comissao) < 100 && Math.abs(delta_pct) < 0.01) status = "estavel";
-      else if (delta_comissao > 0) status = "melhorou";
-      else status = "piorou";
-
-      out.push({
-        key: k,
-        criterio_codigo: ref.criterio_codigo,
-        criterio_nome: (ref.criterio_nome ?? "").slice(0, 80),
-        bu: ref.bu ?? "—",
-        tipo: ref.tipo as "VBC" | "Cobertura" | "Recomendador",
-        efetivo_ant: ef_a,
-        meta_ant: met_a,
-        pct_ant: pct_a,
-        comissao_ant: com_a,
-        efetivo_atu: ef_t,
-        meta_atu: met_t,
-        pct_atu: pct_t,
-        comissao_atu: com_t,
-        delta_pct,
-        delta_comissao,
-        delta_meta: met_t - met_a,
-        status,
+    }
+    for (const { l, a, b } of grupos.values()) {
+      const va = a.reduce((s, r) => s + linha(r).com, 0);
+      const vb = b.reduce((s, r) => s + linha(r).com, 0);
+      if (Math.abs(vb - va) < 0.005 && va === 0) continue;
+      itens.push({
+        key: l.key,
+        fonte: l.fonte,
+        nome: l.nome,
+        detalhe: l.detalhe,
+        a: va,
+        b: vb,
+        delta: vb - va,
+        motivo: va > 0 && vb === 0 && b.length ? `Zerou · ${motivo(a, b)}` : motivo(a, b),
+        noTotal: l.noTotal,
       });
     }
+  };
 
-    return out.sort((a, b) => Math.abs(b.delta_comissao) - Math.abs(a.delta_comissao));
-  }, [atual, anterior]);
-
-  const filtradas = useMemo(() => {
-    return metasComparadas.filter((m) => {
-      if (filtroTipo !== "all" && m.tipo !== filtroTipo) return false;
-      if (filtroBU !== "all" && m.bu !== filtroBU) return false;
-      if (filtroStatus !== "all" && m.status !== filtroStatus) return false;
-      return true;
-    });
-  }, [metasComparadas, filtroTipo, filtroBU, filtroStatus]);
-
-  const bus = useMemo(
-    () => Array.from(new Set(metasComparadas.map((m) => m.bu))).sort(),
-    [metasComparadas],
+  // Vendas (SKU): efeito volume × efeito taxa
+  cruzar(
+    A.skus,
+    B.skus,
+    (s) => {
+      // grupos renomeados pela Nestlé somam no nome atual (ex.: Nescafé 40G → Nescafé Sachet)
+      const nome = grupoCanonico(s.grupo_nome);
+      const antigos = nomesAntigos(nome);
+      const cat = s.categoria_nome ?? CATEGORIA_NOMES[s.categoria as PreserCategoriaCodigo] ?? s.categoria;
+      return {
+      // chave só pelo nome: o grupo renomeado pode ter mudado de categoria (ex.: Estratégico → Mix Pilar)
+      key: `sku|${nome}`,
+      fonte: "vendas",
+      nome,
+      detalhe: antigos.length
+        ? `${s.divisao ?? "—"} · inclui ${antigos.join(", ")} (nome anterior)`
+        : `${s.divisao ?? "—"} · ${cat}`,
+      noTotal: true,
+      com: s.comissao ?? 0,
+      };
+    },
+    (a, b) => {
+      const efA = a.reduce((s, r) => s + (r.efetivo_total ?? 0), 0);
+      const efB = b.reduce((s, r) => s + (r.efetivo_total ?? 0), 0);
+      const pA = a[0]?.pct_comissao ?? null;
+      const pB = b[0]?.pct_comissao ?? null;
+      let t = `Efetivo ${brlC(efA)} → ${brlC(efB)} (${variacao(efA, efB)})`;
+      if (pA != null && pB != null && Math.abs(pA - pB) > 1e-6) t += ` · taxa ${fmtPct(pA, 2)} → ${fmtPct(pB, 2)}`;
+      return t;
+    },
   );
 
-  const totais = useMemo(() => {
-    const comAnt = atual && anterior
-      ? (anterior.extrato.valor_total_comissao ?? 0)
-      : 0;
-    const comAtu = atual ? (atual.extrato.valor_total_comissao ?? 0) : 0;
-    const delta = comAtu - comAnt;
-    const deltaPct = comAnt > 0 ? delta / comAnt : 0;
+  // Drops: quantidade × R$/drop
+  cruzar(
+    A.drops,
+    B.drops,
+    (d) => ({
+      key: `drop|${d.canal_nome}`,
+      fonte: "drops",
+      nome: d.canal_nome,
+      detalhe: "Drops (Crit. 20)",
+      noTotal: true,
+      com: d.comissao ?? 0,
+    }),
+    (a, b) => {
+      const qA = a.reduce((s, r) => s + (r.qtd_drops ?? 0), 0);
+      const qB = b.reduce((s, r) => s + (r.qtd_drops ?? 0), 0);
+      const rA = a[0]?.rs_calculado ?? a[0]?.rs_por_drop ?? 0;
+      const rB = b[0]?.rs_calculado ?? b[0]?.rs_por_drop ?? 0;
+      const dq = qB - qA;
+      let t = `${fmtNum(qA)} → ${fmtNum(qB)} drops (${dq >= 0 ? "+" : ""}${fmtNum(dq)})`;
+      if (Math.abs(rA - rB) > 0.005) t += ` · R$/drop ${fmtBRL(rA)} → ${fmtBRL(rB)}`;
+      else if (rB) t += ` × ${fmtNum(rB, 2)} R$/drop`;
+      return t;
+    },
+  );
 
-    const melhoraram = metasComparadas.filter((m) => m.status === "melhorou");
-    const pioraram = metasComparadas.filter((m) => m.status === "piorou");
+  // Bônus de metas: atingimento e faixa
+  cruzar(
+    A.metas,
+    B.metas,
+    (m) => ({
+      key: `meta|${m.criterio_codigo}|${m.bu}|${m.tipo}`,
+      fonte: "metas",
+      nome: `${m.bu ?? "—"} · ${m.tipo ?? "—"}`,
+      detalhe: m.criterio_nome ?? "",
+      noTotal: true,
+      com: m.comissao ?? 0,
+    }),
+    (a, b) => {
+      const fa = faixaMeta(a[0]);
+      const fb = faixaMeta(b[0]);
+      let t = `Atingimento ${fa.txt} → ${fb.txt}`;
+      const m = b[0] ?? a[0];
+      if (m && m.tipo !== "Recomendador") {
+        const eA = a[0]?.efetivo_fiscal ?? 0;
+        const eB = b[0]?.efetivo_fiscal ?? 0;
+        const f = (v: number) => (m.tipo === "VBC" ? brlC(v) : fmtNum(v));
+        t += ` · efetivo ${f(eA)} → ${f(eB)} (${variacao(eA, eB)})`;
+      }
+      return t;
+    },
+  );
 
-    const ganhoMetas = melhoraram.reduce((s, m) => s + m.delta_comissao, 0);
-    const perdaMetas = pioraram.reduce((s, m) => s + m.delta_comissao, 0);
+  // Demais critérios: base de cálculo × R$ unitário
+  cruzar(
+    A.outros,
+    B.outros,
+    (o) => ({
+      key: `out|${o.criterio_codigo}|${o.bu ?? ""}|${o.contabilizado === false ? "nc" : "c"}`,
+      fonte: fonteDoOutro(o.criterio_codigo),
+      nome: `${o.criterio_codigo ?? ""} · ${o.criterio_nome ?? "—"}`,
+      detalhe: [o.bu, o.tipo_servico].filter(Boolean).join(" · "),
+      noTotal: o.contabilizado !== false,
+      com: o.comissao ?? 0,
+    }),
+    (a, b) => {
+      if (!a.length) return `Não veio no PRESER base`;
+      if (!b.length) return `Não veio no PRESER comparado`;
+      const ra = a[0];
+      const rb = b[0];
+      const un = rb.base_unidade ?? ra.base_unidade;
+      const bA = a.reduce((s, r) => s + (r.base_calculo ?? 0), 0);
+      const bB = b.reduce((s, r) => s + (r.base_calculo ?? 0), 0);
+      if (!un || (ra.base_calculo == null && rb.base_calculo == null)) {
+        const obs = rb.observacao && rb.observacao !== ra.observacao ? rb.observacao : "";
+        return obs ? `Obs.: ${obs.slice(0, 90)}` : "Valor lançado pela Nestlé (sem base no extrato)";
+      }
+      const v = variacao(bA, bB);
+      if (un === "R$") {
+        const t = `Faturamento ${brlC(bA)} → ${brlC(bB)} (${v})`;
+        const pa = ra.rs_unitario;
+        const pb = rb.rs_unitario;
+        return pb != null && pa != null && Math.abs(pa - pb) > 1e-7
+          ? `${t} · taxa ${fmtPct(pa, 3)} → ${fmtPct(pb, 3)}`
+          : `${t} × ${fmtPct(pb ?? pa, 3)}`;
+      }
+      if (un === "kg") {
+        const t = `Peso ${fmtNum(bA / 1000, 1)} t → ${fmtNum(bB / 1000, 1)} t (${v})`;
+        const pa = ra.rs_unitario ?? 0;
+        const pb = rb.rs_unitario ?? 0;
+        return Math.abs(pa - pb) > 1e-4 ? `${t} · R$/kg ${fmtNum(pa, 3)} → ${fmtNum(pb, 3)}` : `${t} × R$ ${fmtNum(pb, 3)}/kg`;
+      }
+      const porUn = (com: number, base: number) => (base ? com / base : 0);
+      const cA = a.reduce((s, r) => s + (r.comissao ?? 0), 0);
+      const cB = b.reduce((s, r) => s + (r.comissao ?? 0), 0);
+      const d = bB - bA;
+      let t = `${fmtNum(bA)} → ${fmtNum(bB)} ${un} (${d >= 0 ? "+" : ""}${fmtNum(d)})`;
+      if (un === "pallets" && bA && bB) t += ` · ${fmtBRL(porUn(cA, bA))} → ${fmtBRL(porUn(cB, bB))} por pallet`;
+      if (un === "visitas") {
+        const obj = (x: typeof rb) => x.observacao?.match(/Objetivo (\d+)/)?.[1];
+        if (obj(ra) || obj(rb)) t += ` · objetivo ${obj(ra) ?? "—"} → ${obj(rb) ?? "—"}`;
+      }
+      return t;
+    },
+  );
 
-    return { comAnt, comAtu, delta, deltaPct, melhoraram, pioraram, ganhoMetas, perdaMetas };
-  }, [metasComparadas, atual, anterior]);
+  return itens;
+}
 
-  // Top 8 metas com maior variação (positiva ou negativa)
-  const topVariacao = useMemo(() => {
-    return [...metasComparadas]
-      .sort((a, b) => Math.abs(b.delta_comissao) - Math.abs(a.delta_comissao))
-      .slice(0, 8)
-      .map((m) => ({
-        label: `${m.bu} - ${m.tipo}`,
-        delta: m.delta_comissao,
-        positivo: m.delta_comissao >= 0,
-      }));
-  }, [metasComparadas]);
+// ─── Página ───────────────────────────────────────────────────────────────
 
-  if (loading) return <PageHeader title="Comparativo Mensal" subtitle="Carregando…" />;
-  if (extratos.length < 2 || !atual || !anterior) {
+export default function PreserComparativo() {
+  const { extratos, selectedId } = usePreserData();
+  const [params, setParams] = useSearchParams();
+  const [todos, setTodos] = useState<PreserExtratoCompleto[] | null>(null);
+
+  useEffect(() => {
+    listExtratosCompletos().then(setTodos).catch(() => setTodos([]));
+  }, [extratos]);
+
+  // períodos "YYYY-MM" disponíveis, do mais recente para o mais antigo
+  const periodos = useMemo(
+    () => (todos ?? []).map((e) => e.extrato.periodo.slice(0, 7)).sort().reverse(),
+    [todos],
+  );
+
+  // Padrão: mês selecionado no PRESER (ou o mais recente) × o mês anterior importado
+  const padraoB =
+    extratos.find((e) => e.id === selectedId)?.periodo.slice(0, 7) ?? periodos[0] ?? "";
+  const b = params.get("b") && periodos.includes(params.get("b")!) ? params.get("b")! : padraoB;
+  const padraoA = periodos[periodos.indexOf(b) + 1] ?? "";
+  const a = params.get("a") && periodos.includes(params.get("a")!) ? params.get("a")! : padraoA;
+
+  const setAB = (na: string, nb: string) => setParams({ a: na, b: nb }, { replace: true });
+
+  if (todos === null) {
     return (
       <>
-        <PageHeader
-          title="Comparativo Mensal"
-          subtitle="Compara o mês atual com o mês anterior."
-          actions={<PreserPeriodoFilter />}
-        />
+        <PageHeader title="Comparativo Mensal" subtitle="Carregando…" />
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Lendo extratos…
+        </div>
+      </>
+    );
+  }
+
+  if (periodos.length < 2) {
+    return (
+      <>
+        <PageHeader title="Comparativo Mensal" subtitle="Compara dois meses do PRESER, item a item." />
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
             <Equal className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium">Importe pelo menos 2 meses para comparar</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {extratos.length === 0
-                  ? "Nenhum extrato importado ainda."
-                  : `Só temos ${periodoLabel(atual?.extrato.periodo.slice(0, 7) ?? "")}. Importe o mês anterior na aba Importar.`}
-              </p>
-            </div>
+            <p className="font-medium">Importe pelo menos 2 meses para comparar</p>
           </CardContent>
         </Card>
       </>
     );
   }
 
-  const lblAtu = periodoLabel(atual.extrato.periodo.slice(0, 7));
-  const lblAnt = periodoLabel(anterior.extrato.periodo.slice(0, 7));
+  const exA = todos.find((e) => e.extrato.periodo.startsWith(a));
+  const exB = todos.find((e) => e.extrato.periodo.startsWith(b));
+  const anoPassado = `${parseInt(b.slice(0, 4), 10) - 1}${b.slice(4)}`;
 
   return (
     <>
       <PageHeader
         title="Comparativo Mensal"
-        subtitle={`${lblAnt} → ${lblAtu}`}
-        actions={<PreserPeriodoFilter />}
+        subtitle="Compare quaisquer dois meses do PRESER e veja, item a item, onde perdeu e onde ganhou."
       />
 
-      {/* ── KPIs ─────────────────────────────────────────────────────── */}
-      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KpiDelta
-          label="Receita Total"
-          atual={totais.comAtu}
-          anterior={totais.comAnt}
-          icon={DollarSign}
-        />
-        <KpiCard
-          label="Metas que melhoraram"
-          value={`${totais.melhoraram.length}`}
-          sub={`+${fmtBRL(totais.ganhoMetas, { compact: true })} em comissão`}
-          icon={TrendingUp}
-          accent="success"
-        />
-        <KpiCard
-          label="Metas que pioraram"
-          value={`${totais.pioraram.length}`}
-          sub={`${fmtBRL(totais.perdaMetas, { compact: true })} em comissão`}
-          icon={TrendingDown}
-          accent="destructive"
-        />
-        <KpiCard
-          label="Balanço líquido"
-          value={fmtBRL(totais.ganhoMetas + totais.perdaMetas, { compact: true })}
-          sub={`Ganhos − perdas em metas`}
-          icon={Target}
-          accent={
-            totais.ganhoMetas + totais.perdaMetas >= 0 ? "success" : "destructive"
-          }
-        />
-      </div>
-
-      {/* ── Chart: top variações ────────────────────────────────────── */}
+      {/* ── Filtro ─────────────────────────────────────────────────── */}
       <Card className="mb-5">
-        <CardHeader>
-          <CardTitle>Top 8 variações entre {lblAnt} e {lblAtu}</CardTitle>
-          <CardDescription>
-            Verde = ganhou mais comissão · Vermelho = perdeu comissão
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topVariacao} layout="vertical" margin={{ left: 0, right: 24 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.3} />
-                <XAxis
-                  type="number"
-                  tickFormatter={(v) => fmtBRL(v, { compact: true })}
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  formatter={(v: number) => [fmtBRL(v), "Delta"]}
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="delta" radius={[0, 4, 4, 0]}>
-                  {topVariacao.map((d, i) => (
-                    <Cell
-                      key={i}
-                      fill={d.positivo ? "hsl(152 60% 42%)" : "hsl(0 72% 55%)"}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+        <CardContent className="flex flex-wrap items-end gap-3 p-4">
+          <MesSelect rotulo="Mês base" valor={a} periodos={periodos} onChange={(v) => setAB(v, b)} cor={C_BASE} />
+          <button
+            onClick={() => setAB(b, a)}
+            title="Inverter"
+            className="mb-0.5 rounded-lg border border-border bg-card p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+          </button>
+          <MesSelect
+            rotulo="Comparar com"
+            valor={b}
+            periodos={periodos}
+            onChange={(v) => setAB(a, v)}
+            cor={C_COMP}
+          />
+          <div className="flex flex-wrap gap-2 pb-0.5">
+            <Atalho
+              ativo={a === periodos[periodos.indexOf(b) + 1]}
+              disabled={!periodos[periodos.indexOf(b) + 1]}
+              onClick={() => setAB(periodos[periodos.indexOf(b) + 1], b)}
+            >
+              vs mês anterior
+            </Atalho>
+            <Atalho
+              ativo={a === anoPassado}
+              disabled={!periodos.includes(anoPassado)}
+              onClick={() => setAB(anoPassado, b)}
+            >
+              vs mesmo mês de {anoPassado.slice(0, 4)}
+            </Atalho>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Filtros ─────────────────────────────────────────────────── */}
-      <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-center gap-4 p-4">
-          <FilterSelect
-            label="Tipo"
-            value={filtroTipo}
-            onChange={setFiltroTipo}
-            options={[
-              { v: "all", l: "Todos" },
-              { v: "VBC", l: "VBC" },
-              { v: "Cobertura", l: "Cobertura" },
-              { v: "Recomendador", l: "Recomendador" },
-            ]}
-          />
-          <FilterSelect
-            label="BU"
-            value={filtroBU}
-            onChange={setFiltroBU}
-            options={[{ v: "all", l: "Todas" }, ...bus.map((b) => ({ v: b, l: b }))]}
-          />
-          <FilterSelect
-            label="Status"
-            value={filtroStatus}
-            onChange={setFiltroStatus}
-            options={[
-              { v: "all", l: "Todos" },
-              { v: "melhorou", l: "Melhorou" },
-              { v: "piorou", l: "Piorou" },
-              { v: "estavel", l: "Estável" },
-              { v: "nova_meta", l: "Nova" },
-              { v: "perdeu_meta", l: "Removida" },
-            ]}
-          />
-          {(filtroTipo !== "all" || filtroBU !== "all" || filtroStatus !== "all") && (
-            <button
-              onClick={() => {
-                setFiltroTipo("all");
-                setFiltroBU("all");
-                setFiltroStatus("all");
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            >
-              Limpar filtros
-            </button>
-          )}
-        </CardContent>
-      </Card>
+      {!exA || !exB ? null : a === b ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Escolha dois meses diferentes.
+          </CardContent>
+        </Card>
+      ) : (
+        <Comparacao A={exA} B={exB} />
+      )}
+    </>
+  );
+}
 
-      {/* ── Tabela ──────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalhe das metas — {lblAnt} vs {lblAtu}</CardTitle>
-          <CardDescription>Ordenado por maior variação absoluta.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="max-h-[600px] overflow-y-auto">
-            <Table>
+function Comparacao({ A, B }: { A: PreserExtratoCompleto; B: PreserExtratoCompleto }) {
+  const lA = periodoLabel(A.extrato.periodo.slice(0, 7));
+  const lB = periodoLabel(B.extrato.periodo.slice(0, 7));
+  const cA = cicloPreser(A.extrato.periodo);
+  const cB = cicloPreser(B.extrato.periodo);
+
+  const itens = useMemo(() => montarItens(A, B), [A, B]);
+  const [fonteFiltro, setFonteFiltro] = useState<FonteKey | "all">("all");
+  const [busca, setBusca] = useState("");
+  const [verTodasPerdas, setVerTodasPerdas] = useState(false);
+  const [verTodosGanhos, setVerTodosGanhos] = useState(false);
+
+  const totA = A.extrato.valor_total_comissao ?? 0;
+  const totB = B.extrato.valor_total_comissao ?? 0;
+  const delta = totB - totA;
+
+  const noTotal = itens.filter((i) => i.noTotal);
+  const foraTotal = itens.filter((i) => !i.noTotal && Math.abs(i.delta) >= 0.5);
+  const perdasTot = noTotal.filter((i) => i.delta < 0).reduce((s, i) => s + i.delta, 0);
+  const ganhosTot = noTotal.filter((i) => i.delta > 0).reduce((s, i) => s + i.delta, 0);
+
+  const filtra = (i: Item) =>
+    (fonteFiltro === "all" || i.fonte === fonteFiltro) &&
+    (!busca || `${i.nome} ${i.detalhe}`.toLowerCase().includes(busca.toLowerCase()));
+  const perdas = noTotal.filter((i) => i.delta <= -0.5 && filtra(i)).sort((x, y) => x.delta - y.delta);
+  const ganhos = noTotal.filter((i) => i.delta >= 0.5 && filtra(i)).sort((x, y) => y.delta - x.delta);
+
+  // ── por fonte (só o que entra no total → fecha com o total do extrato)
+  const fA = somarFontes(A, { soContabilizado: true });
+  const fB = somarFontes(B, { soContabilizado: true });
+  const porFonte = FONTES.map((f) => {
+    const its = noTotal.filter((i) => i.fonte === f.key);
+    return {
+      ...f,
+      a: fA[f.key],
+      b: fB[f.key],
+      delta: fB[f.key] - fA[f.key],
+      perdas: its.filter((i) => i.delta < 0).reduce((s, i) => s + i.delta, 0),
+      ganhos: its.filter((i) => i.delta > 0).reduce((s, i) => s + i.delta, 0),
+      nPerdas: its.filter((i) => i.delta <= -0.5).length,
+    };
+  }).filter((f) => f.a !== 0 || f.b !== 0);
+
+  // ── ponte (waterfall): total A → variação de cada fonte → total B
+  let corrente = totA;
+  const ponte = [
+    { nome: lA.replace("/20", "/"), base: 0, valor: totA, tipo: "total" as const, delta: totA },
+    ...porFonte
+      .filter((f) => Math.abs(f.delta) >= 1)
+      .map((f) => {
+        const base = f.delta >= 0 ? corrente : corrente + f.delta;
+        corrente += f.delta;
+        return { nome: f.nome, base, valor: Math.abs(f.delta), tipo: f.delta >= 0 ? ("ganho" as const) : ("perda" as const), delta: f.delta };
+      }),
+    { nome: lB.replace("/20", "/"), base: 0, valor: totB, tipo: "total" as const, delta: totB },
+  ];
+  const vals = ponte.flatMap((p) => (p.tipo === "total" ? [p.valor] : [p.base, p.base + p.valor]));
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const folga = (hi - lo) * 0.25 || hi * 0.05;
+
+  const tick = { fontSize: 11, fill: C_TINTA };
+
+  return (
+    <>
+      {/* ── Resumo ─────────────────────────────────────────────────── */}
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <ResumoCard titulo={`PRESER ${lA}`} valor={fmtBRL(totA)} sub={`Metas de ${cA.mesMetas} · fat. ${cA.fiscalInicio.slice(0, 5)}–${cA.fiscalFim.slice(0, 5)}`} cor={C_BASE} />
+        <ResumoCard titulo={`PRESER ${lB}`} valor={fmtBRL(totB)} sub={`Metas de ${cB.mesMetas} · fat. ${cB.fiscalInicio.slice(0, 5)}–${cB.fiscalFim.slice(0, 5)}`} cor={C_COMP} />
+        <ResumoCard
+          titulo="Resultado"
+          valor={`${delta >= 0 ? "+" : ""}${fmtBRL(delta)}`}
+          sub={`${delta >= 0 ? "+" : ""}${fmtPct(totA ? delta / totA : 0)} na comissão`}
+          tom={delta >= 0 ? "bom" : "risco"}
+        />
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Perdas × ganhos</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-destructive">{fmtBRL(perdasTot)}</p>
+            <p className="text-lg font-bold tabular-nums text-success">+{fmtBRL(ganhosTot)}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {perdas.length} itens caíram · {ganhos.length} subiram
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Ponte + por fonte ──────────────────────────────────────── */}
+      <div className="mb-5 grid grid-cols-1 gap-4 2xl:grid-cols-5">
+        <Card className="2xl:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">
+              De {lA} para {lB}: o que mudou em cada fonte
+            </CardTitle>
+            <CardDescription>
+              Começa no total de {lA}, soma o que subiu (verde), tira o que caiu (vermelho) e chega em {lB}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="h-80 pb-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={ponte} margin={{ left: 0, right: 8, top: 8 }}>
+                <CartesianGrid stroke={C_GRADE} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="nome" tick={tick} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={56} />
+                <YAxis
+                  tick={tick}
+                  axisLine={false}
+                  tickLine={false}
+                  width={60}
+                  domain={[Math.max(0, lo - folga), hi + folga * 0.4]}
+                  allowDataOverflow
+                  tickFormatter={(v) => brlC(v).replace("R$", "").trim()}
+                />
+                <Tooltip
+                  cursor={{ fill: "hsl(199 44% 94% / 0.6)" }}
+                  content={({ active, payload }) => {
+                    const p = active && payload?.[0]?.payload;
+                    if (!p) return null;
+                    return (
+                      <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-card">
+                        <p className="font-semibold">{p.nome}</p>
+                        <p className={cn("tabular-nums", p.tipo === "perda" ? "text-destructive" : p.tipo === "ganho" ? "text-success" : "")}>
+                          {p.tipo === "total" ? fmtBRL(p.valor) : `${p.delta >= 0 ? "+" : ""}${fmtBRL(p.delta)}`}
+                        </p>
+                      </div>
+                    );
+                  }}
+                />
+                <Bar dataKey="base" stackId="p" fill="transparent" isAnimationActive={false} />
+                <Bar dataKey="valor" stackId="p" radius={[3, 3, 0, 0]} maxBarSize={48}>
+                  {ponte.map((p, i) => (
+                    <Cell key={i} fill={p.tipo === "total" ? (i === 0 ? C_BASE : C_COMP) : p.tipo === "ganho" ? C_BOM : C_RISCO} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="2xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Por fonte</CardTitle>
+            <CardDescription>Clique numa fonte para filtrar as listas abaixo</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table className="tabular-nums [&_td.text-right]:whitespace-nowrap">
               <THead>
                 <Tr>
-                  <Th>Status</Th>
-                  <Th>Tipo</Th>
-                  <Th>BU</Th>
-                  <Th>Critério</Th>
-                  <Th className="text-right">% Atingido<br/><span className="text-muted-foreground font-normal text-[10px]">{lblAnt}</span></Th>
-                  <Th className="text-right">% Atingido<br/><span className="text-muted-foreground font-normal text-[10px]">{lblAtu}</span></Th>
-                  <Th className="text-right">Δ %</Th>
-                  <Th className="text-right">Comissão<br/><span className="text-muted-foreground font-normal text-[10px]">{lblAnt}</span></Th>
-                  <Th className="text-right">Comissão<br/><span className="text-muted-foreground font-normal text-[10px]">{lblAtu}</span></Th>
+                  <Th>Fonte</Th>
+                  <Th className="text-right">{lA}</Th>
+                  <Th className="text-right">{lB}</Th>
                   <Th className="text-right">Δ R$</Th>
                 </Tr>
               </THead>
               <TBody>
-                {filtradas.map((m) => (
-                  <Tr key={m.key}>
+                {porFonte.map((f) => (
+                  <Tr
+                    key={f.key}
+                    onClick={() => setFonteFiltro(fonteFiltro === f.key ? "all" : f.key)}
+                    className={cn("cursor-pointer", fonteFiltro === f.key && "bg-primary/10 hover:bg-primary/10")}
+                  >
                     <Td>
-                      <StatusBadge status={m.status} />
+                      <div className="font-medium">{f.nome}</div>
+                      {f.nPerdas > 0 && (
+                        <div className="whitespace-nowrap text-[11px] text-destructive">
+                          ↓ {f.nPerdas} {f.nPerdas === 1 ? "item" : "itens"} · {fmtBRL(f.perdas)}
+                        </div>
+                      )}
                     </Td>
-                    <Td>
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium"
-                        style={{
-                          background: `${TIPO_COLORS[m.tipo]}22`,
-                          color: TIPO_COLORS[m.tipo],
-                        }}
-                      >
-                        {m.tipo}
-                      </span>
+                    <Td className="text-right">{fmtBRL(f.a)}</Td>
+                    <Td className="text-right">{fmtBRL(f.b)}</Td>
+                    <Td className={cn("text-right font-semibold", f.delta >= 0 ? "text-success" : "text-destructive")}>
+                      {f.delta >= 0 ? "+" : ""}
+                      {fmtBRL(f.delta)}
                     </Td>
-                    <Td className="font-medium">{m.bu}</Td>
-                    <Td className="max-w-[240px] truncate text-xs text-muted-foreground" title={m.criterio_nome}>
-                      {m.criterio_nome}
-                    </Td>
-                    <Td className="text-right text-muted-foreground">
-                      {m.status === "nova_meta" ? "—" : fmtPct(m.pct_ant)}
-                    </Td>
-                    <Td className="text-right">
-                      <span className={cn(
-                        "font-mono text-xs font-semibold",
-                        m.pct_atu >= 1 ? "text-success" : m.pct_atu >= 0.7 ? "text-warning" : "text-destructive",
-                      )}>
-                        {m.status === "perdeu_meta" ? "—" : fmtPct(m.pct_atu)}
-                      </span>
-                    </Td>
-                    <Td className="text-right">
-                      <DeltaInline value={m.delta_pct} type="pct" />
-                    </Td>
-                    <Td className="text-right text-muted-foreground">
-                      {m.status === "nova_meta" ? "—" : fmtBRL(m.comissao_ant, { compact: true })}
-                    </Td>
-                    <Td className="text-right font-medium">
-                      {m.status === "perdeu_meta" ? "—" : fmtBRL(m.comissao_atu, { compact: true })}
-                    </Td>
-                    <Td className="text-right">
-                      <DeltaInline value={m.delta_comissao} type="brl" />
+                  </Tr>
+                ))}
+                <Tr className="bg-secondary/60 font-semibold hover:bg-secondary/60">
+                  <Td>Total do extrato</Td>
+                  <Td className="text-right">{fmtBRL(totA)}</Td>
+                  <Td className="text-right">{fmtBRL(totB)}</Td>
+                  <Td className={cn("text-right", delta >= 0 ? "text-success" : "text-destructive")}>
+                    {delta >= 0 ? "+" : ""}
+                    {fmtBRL(delta)}
+                  </Td>
+                </Tr>
+              </TBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Filtros das listas ─────────────────────────────────────── */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Atalho ativo={fonteFiltro === "all"} onClick={() => setFonteFiltro("all")}>
+          Todas as fontes
+        </Atalho>
+        {porFonte.map((f) => (
+          <Atalho key={f.key} ativo={fonteFiltro === f.key} onClick={() => setFonteFiltro(f.key)}>
+            {f.nome}
+          </Atalho>
+        ))}
+        <div className="relative ml-auto">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar item (ex.: KA, BRL1, Nescau)"
+            className="w-64 rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      {/* ── Onde perdi ─────────────────────────────────────────────── */}
+      <ListaItens
+        titulo="Onde perdi"
+        descricao={`Itens que pagaram menos em ${lB} do que em ${lA}, do maior para o menor prejuízo`}
+        itens={perdas}
+        verTodos={verTodasPerdas}
+        setVerTodos={setVerTodasPerdas}
+        lA={lA}
+        lB={lB}
+        tom="risco"
+        totalRef={perdasTot}
+      />
+
+      {/* ── Onde ganhei ────────────────────────────────────────────── */}
+      <ListaItens
+        titulo="Onde ganhei"
+        descricao={`Itens que pagaram mais em ${lB} do que em ${lA}`}
+        itens={ganhos}
+        verTodos={verTodosGanhos}
+        setVerTodos={setVerTodosGanhos}
+        lA={lA}
+        lB={lB}
+        tom="bom"
+        totalRef={ganhosTot}
+      />
+
+      {foraTotal.length > 0 && (
+        <Card className="mb-5 border-dashed">
+          <CardHeader>
+            <CardTitle className="text-sm">Fora do total do extrato</CardTitle>
+            <CardDescription>
+              Linhas que vêm no PDF mas não entram no valor total da comissão (pagas à parte, ex.: Entrega NiM via CT-e)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table className="tabular-nums [&_td.text-right]:whitespace-nowrap">
+              <TBody>
+                {foraTotal.map((i) => (
+                  <Tr key={i.key}>
+                    <Td className="font-medium">{i.nome}</Td>
+                    <Td className="text-xs text-muted-foreground">{i.motivo}</Td>
+                    <Td className="text-right">{fmtBRL(i.a)}</Td>
+                    <Td className="text-right">{fmtBRL(i.b)}</Td>
+                    <Td className={cn("text-right font-semibold", i.delta >= 0 ? "text-success" : "text-destructive")}>
+                      {i.delta >= 0 ? "+" : ""}
+                      {fmtBRL(i.delta)}
                     </Td>
                   </Tr>
                 ))}
               </TBody>
             </Table>
-            {filtradas.length === 0 && (
-              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-                Nenhuma meta corresponde aos filtros.
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        A soma de perdas e ganhos por item fecha exatamente com a diferença do valor total da comissão
+        ({fmtBRL(perdasTot + ganhosTot)} = {fmtBRL(delta)}). Bônus de metas de {lA} refere-se às metas de {cA.mesMetas};
+        de {lB}, às metas de {cB.mesMetas}.
+      </p>
     </>
   );
 }
 
-// ─── Sub-componentes ───────────────────────────────────────────────────────
+// ─── Componentes ──────────────────────────────────────────────────────────
 
-function KpiDelta({
-  label,
-  atual,
-  anterior,
-  icon: Icon,
+function ListaItens({
+  titulo,
+  descricao,
+  itens,
+  verTodos,
+  setVerTodos,
+  lA,
+  lB,
+  tom,
+  totalRef,
 }: {
-  label: string;
-  atual: number;
-  anterior: number;
-  icon: React.ComponentType<{ className?: string }>;
+  titulo: string;
+  descricao: string;
+  itens: Item[];
+  verTodos: boolean;
+  setVerTodos: (v: boolean) => void;
+  lA: string;
+  lB: string;
+  tom: "bom" | "risco";
+  totalRef: number;
 }) {
-  const delta = atual - anterior;
-  const pct = anterior > 0 ? delta / anterior : 0;
-  const positivo = delta >= 0;
+  const LIM = 15;
+  const mostrados = verTodos ? itens : itens.slice(0, LIM);
+  const soma = itens.reduce((s, i) => s + i.delta, 0);
+  const maxAbs = Math.max(...itens.map((i) => Math.abs(i.delta)), 1);
+  const cor = tom === "risco" ? C_RISCO : C_BOM;
+  const Icone = tom === "risco" ? ArrowDownRight : ArrowUpRight;
+
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card">
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80",
-          positivo ? "from-success/15 to-success/0" : "from-destructive/15 to-destructive/0",
+    <Card className="mb-5">
+      <CardHeader className="flex-row items-start justify-between space-y-0 gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Icone className="h-4 w-4" style={{ color: cor }} />
+            {titulo}
+            <span className="font-bold tabular-nums" style={{ color: cor }}>
+              {tom === "bom" ? "+" : ""}
+              {fmtBRL(soma)}
+            </span>
+          </CardTitle>
+          <CardDescription>{descricao}</CardDescription>
+        </div>
+        <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+          {itens.length} {itens.length === 1 ? "item" : "itens"}
+        </span>
+      </CardHeader>
+      <CardContent className="p-0">
+        {itens.length === 0 ? (
+          <p className="px-5 pb-5 text-sm text-muted-foreground">Nenhum item com esse filtro.</p>
+        ) : (
+          <Table className="tabular-nums [&_td.text-right]:whitespace-nowrap">
+            <THead>
+              <Tr>
+                <Th className="w-8">#</Th>
+                <Th>Item</Th>
+                <Th>O que mudou</Th>
+                <Th className="text-right">{lA}</Th>
+                <Th className="text-right">{lB}</Th>
+                <Th className="text-right">{tom === "risco" ? "Perda" : "Ganho"}</Th>
+                <Th className="w-28">Peso</Th>
+              </Tr>
+            </THead>
+            <TBody>
+              {mostrados.map((i, idx) => (
+                <Tr key={i.key}>
+                  <Td className="text-xs text-muted-foreground">{idx + 1}</Td>
+                  <Td>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {NOME_FONTE[i.fonte]}
+                      </span>
+                      <span className="font-medium">{i.nome}</span>
+                    </div>
+                    {i.detalhe && <div className="mt-0.5 text-[11px] text-muted-foreground">{i.detalhe}</div>}
+                  </Td>
+                  <Td className="text-xs text-muted-foreground">{i.motivo}</Td>
+                  <Td className="text-right">{fmtBRL(i.a)}</Td>
+                  <Td className="text-right">{fmtBRL(i.b)}</Td>
+                  <Td className="text-right font-semibold" style={{ color: cor }}>
+                    {i.delta >= 0 ? "+" : ""}
+                    {fmtBRL(i.delta)}
+                  </Td>
+                  <Td>
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 flex-1 rounded-full bg-secondary">
+                        <div
+                          className="h-1.5 rounded-full"
+                          style={{ width: `${(Math.abs(i.delta) / maxAbs) * 100}%`, background: cor }}
+                        />
+                      </div>
+                      <span className="w-9 text-right text-[10px] text-muted-foreground">
+                        {totalRef ? fmtPct(i.delta / totalRef, 0) : ""}
+                      </span>
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
         )}
-      />
-      <div className="relative">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-          <Icon className={cn("h-5 w-5", positivo ? "text-success" : "text-destructive")} />
-        </div>
-        <p className="mt-3 text-3xl font-bold leading-tight">{fmtBRL(atual, { compact: true })}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Anterior: {fmtBRL(anterior, { compact: true })}
-        </p>
-        <div
-          className={cn(
-            "mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-            positivo ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
-          )}
-        >
-          {positivo ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-          {fmtBRL(Math.abs(delta), { compact: true })} ({fmtPct(Math.abs(pct))})
-        </div>
-      </div>
-    </div>
+        {itens.length > LIM && (
+          <button
+            onClick={() => setVerTodos(!verTodos)}
+            className="w-full border-t border-border py-2.5 text-xs font-medium text-primary hover:bg-secondary/50"
+          >
+            {verTodos ? "Mostrar só os 15 maiores" : `Ver todos os ${itens.length} itens`}
+          </button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-function KpiCard({
-  label, value, sub, icon: Icon, accent,
+function MesSelect({
+  rotulo,
+  valor,
+  periodos,
+  onChange,
+  cor,
 }: {
-  label: string; value: string; sub?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  accent: "success" | "destructive";
-}) {
-  const accentBg = accent === "success" ? "from-success/15 to-success/0" : "from-destructive/15 to-destructive/0";
-  const accentText = accent === "success" ? "text-success" : "text-destructive";
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card">
-      <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80", accentBg)} />
-      <div className="relative">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-          <Icon className={cn("h-5 w-5", accentText)} />
-        </div>
-        <p className="mt-3 text-3xl font-bold leading-tight">{value}</p>
-        {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function FilterSelect({
-  label, value, onChange, options,
-}: {
-  label: string;
-  value: string;
+  rotulo: string;
+  valor: string;
+  periodos: string[];
   onChange: (v: string) => void;
-  options: { v: string; l: string }[];
+  cor: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}:</span>
+    <label className="flex flex-col gap-1">
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />
+        {rotulo}
+      </span>
       <select
-        value={value}
+        value={valor}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-border bg-card px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+        className="min-w-[210px] rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-primary"
       >
-        {options.map((o) => (
-          <option key={o.v} value={o.v}>{o.l}</option>
+        {periodos.map((p) => (
+          <option key={p} value={p}>
+            PRESER {periodoLabel(p)} · metas {cicloPreser(p).mesMetasCurto}
+          </option>
         ))}
       </select>
-    </div>
+    </label>
   );
 }
 
-function StatusBadge({ status }: { status: MetaComparada["status"] }) {
-  const cfg: Record<MetaComparada["status"], { v: "success" | "destructive" | "default" | "warning" | "muted"; l: string }> = {
-    melhorou: { v: "success", l: "↑ Melhorou" },
-    piorou: { v: "destructive", l: "↓ Piorou" },
-    estavel: { v: "muted", l: "= Estável" },
-    nova_meta: { v: "default", l: "✨ Nova" },
-    perdeu_meta: { v: "warning", l: "× Removida" },
-  };
-  const c = cfg[status];
-  return <Badge variant={c.v}>{c.l}</Badge>;
-}
-
-function DeltaInline({ value, type }: { value: number; type: "brl" | "pct" }) {
-  if (Math.abs(value) < (type === "brl" ? 1 : 0.001)) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  const positivo = value >= 0;
+function Atalho({
+  ativo,
+  disabled,
+  onClick,
+  children,
+}: {
+  ativo?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <span
+    <button
+      onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex items-center gap-0.5 font-mono text-xs font-bold",
-        positivo ? "text-success" : "text-destructive",
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40",
+        ativo
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-card text-muted-foreground hover:text-foreground",
       )}
     >
-      {positivo ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-      {type === "brl"
-        ? fmtBRL(Math.abs(value), { compact: true })
-        : `${(Math.abs(value) * 100).toFixed(1)}pp`}
-    </span>
+      {children}
+    </button>
+  );
+}
+
+function ResumoCard({
+  titulo,
+  valor,
+  sub,
+  cor,
+  tom,
+}: {
+  titulo: string;
+  valor: string;
+  sub: string;
+  cor?: string;
+  tom?: "bom" | "risco";
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          {cor && <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />}
+          {titulo}
+        </p>
+        <p
+          className={cn(
+            "mt-1 text-2xl font-bold tabular-nums",
+            tom === "bom" && "text-success",
+            tom === "risco" && "text-destructive",
+          )}
+        >
+          {valor}
+        </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>
+      </CardContent>
+    </Card>
   );
 }

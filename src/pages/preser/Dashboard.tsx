@@ -30,6 +30,10 @@ import {
   Layers,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { CicloPreserInfo } from "@/components/preser/CicloPreserInfo";
+import { GanhoSobreVenda } from "@/components/preser/GanhoSobreVenda";
+import { cicloPreser } from "@/lib/preser/ciclo";
+import { somarFontes } from "@/lib/preser/fontes";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +53,7 @@ import { cn } from "@/lib/utils";
 const C_OK = "hsl(152 60% 42%)";
 const C_WARN = "hsl(38 92% 50%)";
 const C_BAD = "hsl(0 72% 55%)";
-const C_PRIMARY = "hsl(215 80% 48%)";
+const C_PRIMARY = "hsl(197 99% 28%)";
 const C_PURPLE = "hsl(271 60% 56%)";
 
 export default function PreserDashboard() {
@@ -70,31 +74,13 @@ export default function PreserDashboard() {
   // ─── Fontes de receita: de onde vem cada R$ da comissão ─────────
   const fontesReceita = useMemo(() => {
     if (!atual) return [];
-    const skus = atual.skus.reduce((s, r) => s + (r.comissao ?? 0), 0);
-    const drops = atual.drops.reduce((s, r) => s + (r.comissao ?? 0), 0);
-    const metas = atual.metas.reduce((s, r) => s + (r.comissao ?? 0), 0);
-
-    // Categoriza os "outros" em sub-fontes
-    let transporte = 0; // Armazenagem + Refrigerado + Entrega + Op Logística
-    let garantia = 0; // Garantia de Crédito
-    let visitas = 0; // Visitas Farma/PAC/Mercha
-    let seguros = 0; // RC-DC, Seguro Patrimonial
-    let outrosBonus = 0; // Ressarcimentos, bônus pontuais
-
-    for (const o of atual.outros) {
-      const cod = o.criterio_codigo ?? 0;
-      const com = o.comissao ?? 0;
-      if (cod === 22 || cod === 23 || cod === 24 || cod === 25) transporte += com;
-      else if (cod === 21) garantia += com;
-      else if (cod === 17 || cod === 19 || cod === 65 || cod === 94) visitas += com;
-      else if (cod === 98 || cod === 101 || cod === 108) seguros += com;
-      else outrosBonus += com;
-    }
+    const { vendas: skus, drops, metas, transporte, garantia, visitas, seguros, pontuais: outrosBonus } =
+      somarFontes(atual);
 
     return [
-      { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(215 80% 48%)", desc: "SKUs (Crit. 1)" },
+      { nome: "Vendas", icone: "📦", valor: skus, cor: "hsl(197 99% 28%)", desc: "SKUs (Crit. 1)" },
       { nome: "Drops", icone: "🚚", valor: drops, cor: "hsl(152 60% 42%)", desc: "Entregas por canal (Crit. 20)" },
-      { nome: "Bônus Meta", icone: "🎯", valor: metas, cor: "hsl(38 92% 50%)", desc: "VBC + Cobertura + Recomendador" },
+      { nome: "Bônus Meta", icone: "🎯", valor: metas, cor: "hsl(38 92% 50%)", desc: `Metas de ${cicloPreser(atual.extrato.periodo).mesMetasCurto} (VBC + Cob. + Rec.)` },
       { nome: "Transporte", icone: "🏭", valor: transporte, cor: "hsl(271 60% 56%)", desc: "Armazenagem + Refrigerado + Entrega" },
       { nome: "Garantia Crédito", icone: "🛡️", valor: garantia, cor: "hsl(185 60% 42%)", desc: "0,6% s/ faturamento (Crit. 21)" },
       { nome: "Visitas / Mercha", icone: "👣", valor: visitas, cor: "hsl(330 70% 50%)", desc: "Farma + PAC + Merchandising" },
@@ -357,15 +343,17 @@ export default function PreserDashboard() {
     <>
       <PageHeader
         title="Remuneração Broker (PRESER)"
-        subtitle={`${periodoLabel_} • ${historico.length} extrato(s) no histórico`}
+        subtitle={`PRESER ${periodoLabel_} • ${historico.length} extrato(s) no histórico`}
         actions={<PreserPeriodoFilter />}
       />
+
+      <CicloPreserInfo periodo={e.periodo} />
 
       {/* ═══════ HERO PRINCIPAL — Os 3 números que importam ═══════ */}
       <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-3">
         <HeroKpi
           label="Valor Faturado"
-          subLabel="Total vendido para a Nestlé (AC)"
+          subLabel={`Vendido p/ Nestlé · ${cicloPreser(e.periodo).fiscalInicio.slice(0, 5)} a ${cicloPreser(e.periodo).fiscalFim.slice(0, 5)}`}
           value={fmtBRL(e.faturamento_ac, { compact: true })}
           valueFull={fmtBRL(e.faturamento_ac)}
           icon={Target}
@@ -405,6 +393,9 @@ export default function PreserDashboard() {
       </div>
 
       {/* ── Banner comparativo (se há mês anterior) ─────────────── */}
+      {/* ── % que ganhamos sobre o que vendemos: ano atual × ano anterior ── */}
+      <GanhoSobreVenda periodo={e.periodo} />
+
       {anterior && <ComparativoBanner atual={atual} anterior={anterior} />}
 
       {/* ═══════ De onde vem a comissão (logo após o Hero) ═══════ */}
@@ -681,7 +672,7 @@ export default function PreserDashboard() {
               valor={e.csll_retido ?? 0}
               aliquota="1,0%"
               base={e.valor_total_contabilizado ?? 0}
-              cor="hsl(215 80% 48%)"
+              cor="hsl(197 99% 28%)"
               descricao="Contribuição Social sobre Lucro Líquido"
             />
           </div>
@@ -696,7 +687,7 @@ export default function PreserDashboard() {
                 { label: "IRRF", v: e.irrf_retido ?? 0, c: "hsl(0 72% 55%)" },
                 { label: "PIS", v: e.pis_retido ?? 0, c: "hsl(38 92% 50%)" },
                 { label: "COFINS", v: e.cofins_retido ?? 0, c: "hsl(271 60% 56%)" },
-                { label: "CSLL", v: e.csll_retido ?? 0, c: "hsl(215 80% 48%)" },
+                { label: "CSLL", v: e.csll_retido ?? 0, c: "hsl(197 99% 28%)" },
               ].map((d) => {
                 const pct = impostos > 0 ? (d.v / impostos) * 100 : 0;
                 if (pct === 0) return null;

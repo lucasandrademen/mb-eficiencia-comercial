@@ -81,6 +81,9 @@ export default function Ranking() {
     return arr;
   }, [rows, sortKey, dir, q]);
 
+  // Vendedores DISTINTOS (a tabela lista 1 linha por vendedor × mês de propósito).
+  const nVendedores = useMemo(() => new Set(sorted.map((r) => r.vendedor_id)).size, [sorted]);
+
   if (rows.length === 0) {
     return (
       <>
@@ -90,13 +93,16 @@ export default function Ranking() {
     );
   }
 
+  const subt =
+    sorted.length === nVendedores
+      ? `${fmtNum(nVendedores)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`
+      : `${fmtNum(nVendedores)} vendedores · ${fmtNum(sorted.length)} linhas (vendedor × mês) — clique no cabeçalho pra ordenar.`;
+  const notaCusto =
+    " Custo = folha recorrente + encargos (sem rescisão, 1/3 de férias, 13º e retroativos). Quadrantes comparam cada vendedor só com o seu segmento (KA, Varejo, NPRO). Contas da casa e setores vagos ficam fora.";
+
   return (
     <>
-      <PageHeader
-        title="Ranking de Vendedores"
-        subtitle={`${fmtNum(sorted.length)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`}
-        actions={<PeriodoFilter />}
-      />
+      <PageHeader title="Ranking de Vendedores" subtitle={subt + notaCusto} actions={<PeriodoFilter />} />
 
       <Card className="mb-4">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -207,7 +213,20 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
     <Tr>
       <Td className="text-muted-foreground font-mono text-xs">{idx}</Td>
       <Td>
-        <div className="font-medium">{r.vendedor_nome}</div>
+        <div className="font-medium">
+          {r.vendedor_nome}
+          {r.segmento && r.segmento !== "Varejo" && (
+            <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{r.segmento}</span>
+          )}
+          {r.desligado && (
+            <span
+              title="Desligado no mês: custo = média dos meses completos (sem rescisão)"
+              className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              desligado
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-muted-foreground">{r.periodo}</div>
       </Td>
       <Td className="text-muted-foreground">{r.supervisor || "—"}</Td>
@@ -235,7 +254,14 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
           {r.quadrante_performance}
         </Badge>
       </Td>
-      <Td className="text-right">{fmtNum(r.total_clientes_carteira)}</Td>
+      <Td className="text-right">
+        {fmtNum(r.total_clientes_carteira)}
+        {r.total_clientes_carteira > 0 && r.clientes_positivados != null && (
+          <div className="text-[10px] text-muted-foreground">
+            {fmtNum(r.clientes_positivados)} compraram ({Math.round((r.clientes_positivados / r.total_clientes_carteira) * 100)}%)
+          </div>
+        )}
+      </Td>
       <Td className="text-right">{fmtNum(r.total_municipios_atendidos)}</Td>
       <Td className="text-right">{fmtBRL(r.ticket_medio, { compact: true })}</Td>
     </Tr>

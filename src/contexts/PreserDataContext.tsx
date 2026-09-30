@@ -43,68 +43,49 @@ export function PreserDataProvider({ children }: { children: React.ReactNode }) 
   const [serie, setSerie] = useState<PreserDataContextValue["serie"]>([]);
 
   const loadList = useCallback(async () => {
-    const [list, s] = await Promise.all([listExtratos(), getSerieTemporalBroker()]);
-    setExtratos(list);
-    setSerie(s);
-    return list;
+    try {
+      const [list, s] = await Promise.all([listExtratos(), getSerieTemporalBroker()]);
+      setExtratos(list);
+      setSerie(s);
+      return list;
+    } catch (err) {
+      console.error("Erro ao ler PRESER do banco local", err);
+      return [];
+    }
   }, []);
 
-  const setSelectedId = useCallback(
-    async (id: string) => {
-      setSelectedIdRaw(id);
-      setLoading(true);
+  const setSelectedId = useCallback(async (id: string) => {
+    setSelectedIdRaw(id);
+    const semPurina = (d: PreserExtratoCompleto): PreserExtratoCompleto => ({
+      ...d,
+      metas: filterPurinaMetas(d.metas),
+      outros: d.outros.filter((o) => !isPurina(o)),
+    });
+    try {
       const data = await getExtratoPorId(id);
-      if (data) {
-        // filtra Purina em todas as listas
-        setAtual({
-          extrato: data.extrato,
-          skus: data.skus,
-          drops: data.drops,
-          metas: filterPurinaMetas(data.metas),
-          outros: data.outros.filter((o) => !isPurina(o)),
-        });
-
-        // Carrega o extrato do mês anterior para comparação
-        // Ordena por período desc para encontrar o anterior cronologicamente
-        const idxAtual = extratos.findIndex((e) => e.id === id);
-        const ordenados = [...extratos].sort((a, b) =>
-          a.periodo < b.periodo ? 1 : -1,
-        );
-        const posOrdenado = ordenados.findIndex((e) => e.id === id);
-        const anteriorMeta = ordenados[posOrdenado + 1]; // próximo na lista desc = anterior cronológico
-        if (anteriorMeta) {
-          const ant = await getExtratoPorId(anteriorMeta.id);
-          if (ant) {
-            setAnterior({
-              extrato: ant.extrato,
-              skus: ant.skus,
-              drops: ant.drops,
-              metas: filterPurinaMetas(ant.metas),
-              outros: ant.outros.filter((o) => !isPurina(o)),
-            });
-          } else {
-            setAnterior(null);
-          }
-        } else {
-          setAnterior(null);
-        }
-        // silencia warning de "idxAtual unused" — usado para reactivity
-        void idxAtual;
-      } else {
-        setAtual(null);
-        setAnterior(null);
-      }
+      setAtual(data ? semPurina(data) : null);
+      // mês anterior cronológico, para comparação (lista já vem em ordem desc)
+      const lista = await listExtratos();
+      const pos = lista.findIndex((e) => e.id === id);
+      const ant = pos >= 0 && lista[pos + 1] ? await getExtratoPorId(lista[pos + 1].id) : null;
+      setAnterior(ant ? semPurina(ant) : null);
+    } catch (err) {
+      console.error("Erro ao ler PRESER do banco local", err);
+      setAtual(null);
+      setAnterior(null);
+    } finally {
       setLoading(false);
-    },
-    [extratos],
-  );
+    }
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
     const list = await loadList();
     if (list.length > 0) {
-      await setSelectedId(selectedId ?? list[0].id);
+      const aindaExiste = selectedId && list.some((e) => e.id === selectedId);
+      await setSelectedId(aindaExiste && selectedId ? selectedId : list[0].id);
     } else {
+      setAnterior(null);
       setAtual(null);
       setSelectedIdRaw(null);
     }

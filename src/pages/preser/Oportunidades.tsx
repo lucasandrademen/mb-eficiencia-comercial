@@ -53,7 +53,7 @@ const PRIORIDADE_BADGE: Record<Oportunidade["prioridade"], "destructive" | "warn
 };
 
 const FONTE_COLORS: Record<Oportunidade["fonte"], string> = {
-  "Meta VBC": "hsl(215 80% 48%)",
+  "Meta VBC": "hsl(197 99% 28%)",
   "Recomendador": "hsl(0 72% 55%)",
   "Cobertura": "hsl(38 92% 50%)",
   "Drops": "hsl(152 60% 42%)",
