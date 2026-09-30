@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { CicloPreserInfo } from "@/components/preser/CicloPreserInfo";
+import { GanhoSobreVenda } from "@/components/preser/GanhoSobreVenda";
 import { cicloPreser } from "@/lib/preser/ciclo";
 import { somarFontes } from "@/lib/preser/fontes";
 import { PreserPeriodoFilter } from "@/components/PreserPeriodoFilter";
@@ -392,6 +393,9 @@ export default function PreserDashboard() {
       </div>
 
       {/* ── Banner comparativo (se há mês anterior) ─────────────── */}
+      {/* ── % que ganhamos sobre o que vendemos: ano atual × ano anterior ── */}
+      <GanhoSobreVenda periodo={e.periodo} />
+
       {anterior && <ComparativoBanner atual={atual} anterior={anterior} />}
 
       {/* ═══════ De onde vem a comissão (logo após o Hero) ═══════ */}
