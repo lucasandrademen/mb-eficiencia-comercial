@@ -5,7 +5,13 @@ import { loadDataset, saveDataset } from "@/lib/storage";
 import { buildConsolidated, computeTimeMetrics, listPeriodos, TimeMetrics } from "@/lib/calculations";
 
 interface DataContextValue {
+  /** Dados do ANO selecionado (vendedores, carteira e folha filtrados; DRO inteiro). */
   dataset: Dataset;
+  /** Todos os anos — use para comparações entre anos e para importar (não perder outro ano). */
+  datasetCompleto: Dataset;
+  anos: string[];
+  ano: string;
+  setAno: (a: string) => void;
   setDataset: (d: Dataset) => void;
   mergeDataset: (partial: Partial<Dataset>) => void;
   reset: () => void;
@@ -28,6 +34,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [dataset, setDatasetState] = useState<Dataset>(EMPTY_DATASET);
   const [periodosSelecionados, setPeriodosSelecionadosState] = useState<string[]>([]);
   const [pronto, setPronto] = useState(false);
+  const [anoEscolhido, setAnoEscolhido] = useState<string | null>(null);
+
+  // Anos com vendedores ou folha; padrão = o mais recente.
+  const anos = useMemo(() => [...new Set(listPeriodos(dataset).map((p) => p.slice(0, 4)))].sort(), [dataset]);
+  const ano = anoEscolhido && anos.includes(anoEscolhido) ? anoEscolhido : anos[anos.length - 1] ?? String(new Date().getFullYear());
+  const setAno = useCallback((a: string) => {
+    setAnoEscolhido(a);
+    setPeriodosSelecionadosState([]);
+  }, []);
+  // Tudo que as telas veem é do ano selecionado — "Ano todo" nunca soma dois anos.
+  const datasetAno = useMemo<Dataset>(
+    () => ({
+      ...dataset,
+      vendedor: dataset.vendedor.filter((r) => r.periodo.startsWith(ano)),
+      carteira: dataset.carteira.filter((r) => r.periodo.startsWith(ano)),
+      folha: (dataset.folha ?? []).filter((r) => r.periodo.startsWith(ano)),
+    }),
+    [dataset, ano],
+  );
 
   useEffect(() => {
     loadDataset().then((d) => {
@@ -62,7 +87,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPeriodosSelecionadosState([]);
   }, []);
 
-  const periodos = useMemo(() => listPeriodos(dataset), [dataset]);
+  const periodos = useMemo(() => listPeriodos(datasetAno), [datasetAno]);
 
   // limpa seleções inválidas
   useEffect(() => {
@@ -96,18 +121,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [periodos],
   );
 
-  const rowsAll = useMemo(() => buildConsolidated(dataset), [dataset]);
+  const rowsAll = useMemo(() => buildConsolidated(datasetAno), [datasetAno]);
   const rows = useMemo(
     () =>
       periodosSelecionados.length === 0
         ? rowsAll
-        : buildConsolidated(dataset, { periodos: periodosSelecionados }),
-    [dataset, periodosSelecionados, rowsAll],
+        : buildConsolidated(datasetAno, { periodos: periodosSelecionados }),
+    [datasetAno, periodosSelecionados, rowsAll],
   );
   const metrics = useMemo(() => computeTimeMetrics(rows), [rows]);
 
   const value: DataContextValue = {
-    dataset,
+    dataset: datasetAno,
+    datasetCompleto: dataset,
+    anos,
+    ano,
+    setAno,
     setDataset,
     mergeDataset,
     reset,

@@ -9,6 +9,9 @@ export function PeriodoFilter() {
     togglePeriodo,
     selectAll,
     selectTrimestre,
+    anos,
+    ano,
+    setAno,
   } = useData();
 
   if (periodos.length === 0) return null;
@@ -28,6 +31,23 @@ export function PeriodoFilter() {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {anos.length > 1 && (
+        <div className="mr-1 flex rounded-full border border-border bg-card p-0.5">
+          {anos.map((a) => (
+            <button
+              key={a}
+              type="button"
+              onClick={() => setAno(a)}
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors",
+                a === ano ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {a}
+            </button>
+          ))}
+        </div>
+      )}
       <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">
         Período
       </span>
@@ -85,5 +105,28 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+/** Seletor de ano (2025 | 2026) para telas que têm a própria lista de meses. */
+export function AnoToggle() {
+  const { anos, ano, setAno } = useData();
+  if (anos.length < 2) return null;
+  return (
+    <div className="flex rounded-full border border-border bg-card p-0.5">
+      {anos.map((a) => (
+        <button
+          key={a}
+          type="button"
+          onClick={() => setAno(a)}
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+            a === ano ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {a}
+        </button>
+      ))}
+    </div>
   );
 }

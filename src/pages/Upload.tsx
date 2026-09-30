@@ -37,7 +37,9 @@ const defaultMes = () => {
 };
 
 export default function Upload() {
-  const { dataset, mergeDataset, reset, periodos } = useData();
+  // Importação sempre trabalha com TODOS os anos (senão, ao gravar uma folha nova,
+  // os meses de outro ano sumiriam da base).
+  const { datasetCompleto: dataset, mergeDataset, reset, periodos } = useData();
 
   const totals = {
     vendedor: dataset.vendedor.length,

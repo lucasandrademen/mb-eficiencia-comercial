@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AnoToggle } from "@/components/PeriodoFilter";
 import { Link } from "react-router-dom";
 import {
   Building2,
@@ -173,13 +174,16 @@ export default function FolhaColaborador() {
         title="Folha por Colaborador"
         subtitle={`MB Logística · ${periodoLabel(mesAtivo)} · ${fmtNum(totais.headcount)} colaboradores · o que cada um recebeu (e custou).`}
         actions={
-          <Select value={mesAtivo} onChange={(e) => setMes(e.target.value)} className="w-44">
-            {periodos.map((p) => (
-              <option key={p} value={p}>
-                {periodoLabel(p)}
-              </option>
-            ))}
-          </Select>
+          <>
+            <AnoToggle />
+            <Select value={mesAtivo} onChange={(e) => setMes(e.target.value)} className="w-44">
+              {periodos.map((p) => (
+                <option key={p} value={p}>
+                  {periodoLabel(p)}
+                </option>
+              ))}
+            </Select>
+          </>
         }
       />
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AnoToggle } from "@/components/PeriodoFilter";
 import {
   Bar,
   BarChart,
@@ -176,13 +177,16 @@ export default function EficienciaOperacional() {
         title="Eficiência Operacional"
         subtitle={`MB Logística · ${periodoLabel(mesAtivo)} · custo por funcionário, por setor e eficiência da operação.`}
         actions={
-          <Select value={mesAtivo} onChange={(e) => setMes(e.target.value)} className="w-44">
-            {periodos.map((p) => (
-              <option key={p} value={p}>
-                {periodoLabel(p)}
-              </option>
-            ))}
-          </Select>
+          <>
+            <AnoToggle />
+            <Select value={mesAtivo} onChange={(e) => setMes(e.target.value)} className="w-44">
+              {periodos.map((p) => (
+                <option key={p} value={p}>
+                  {periodoLabel(p)}
+                </option>
+              ))}
+            </Select>
+          </>
         }
       />
 

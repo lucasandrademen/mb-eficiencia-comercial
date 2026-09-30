@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FolhaComparativoAnual } from "@/components/FolhaComparativoAnual";
 import { useSearchParams } from "react-router-dom";
 import {
   Bar,
@@ -363,6 +364,9 @@ export default function CustosSetor() {
         }
         actions={<PeriodoFilter />}
       />
+
+      {/* ── Folha do ano × ano anterior ─────────────────────────────── */}
+      {filtroDept === "all" && <FolhaComparativoAnual />}
 
       {/* ── Alerta: meses sem DRO importado ─────────────────────────── */}
       {coberturaDro.faltantes.length > 0 && (
