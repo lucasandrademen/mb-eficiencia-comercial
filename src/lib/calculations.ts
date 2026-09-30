@@ -8,6 +8,7 @@ import {
   VendedorConsolidado,
 } from "./types";
 import { periodoToTrimestre } from "./format";
+import { segmentoDoSetor } from "./segmentos";
 
 // Encargos patronais ESTIMADOS (FGTS + INSS + 13º + férias + provisões) — usado
 // SÓ como fallback quando a folha não traz os encargos reais (dado antigo ou
@@ -329,16 +330,19 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
       folha_match_nome: folhaMatch?.nome,
       custo_nao_recorrente: partes?.naoRecorrente ?? 0,
       desligado: !!folhaMatch?.demissao,
+      segmento: segmentoDoSetor(vendedor_id),
 
       is_supervisor: isSupervisorNome(vendedor_nome),
     });
   }
 
-  // medianas POR PERÍODO
+  // medianas POR PERÍODO e SEGMENTO (KA × Varejo × NPRO): cada vendedor é
+  // comparado só com quem joga o mesmo jogo.
   const byPeriodo = new Map<string, VendedorConsolidado[]>();
   for (const r of rows) {
-    if (!byPeriodo.has(r.periodo)) byPeriodo.set(r.periodo, []);
-    byPeriodo.get(r.periodo)!.push(r);
+    const g = `${r.periodo}|${r.segmento ?? "Varejo"}`;
+    if (!byPeriodo.has(g)) byPeriodo.set(g, []);
+    byPeriodo.get(g)!.push(r);
   }
   for (const [, group] of byPeriodo) {
     const fatList = group.map((r) => r.faturamento).filter((v) => v > 0);

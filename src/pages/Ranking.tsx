@@ -98,7 +98,7 @@ export default function Ranking() {
       ? `${fmtNum(nVendedores)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`
       : `${fmtNum(nVendedores)} vendedores · ${fmtNum(sorted.length)} linhas (vendedor × mês) — clique no cabeçalho pra ordenar.`;
   const notaCusto =
-    " Custo = folha recorrente + encargos (sem rescisão, 1/3 de férias, 13º e retroativos). Contas da casa e setores vagos ficam fora.";
+    " Custo = folha recorrente + encargos (sem rescisão, 1/3 de férias, 13º e retroativos). Quadrantes comparam cada vendedor só com o seu segmento (KA, Varejo, NPRO). Contas da casa e setores vagos ficam fora.";
 
   return (
     <>
@@ -215,6 +215,9 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
       <Td>
         <div className="font-medium">
           {r.vendedor_nome}
+          {r.segmento && r.segmento !== "Varejo" && (
+            <span className="ml-1.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{r.segmento}</span>
+          )}
           {r.desligado && (
             <span
               title="Desligado no mês: custo = média dos meses completos (sem rescisão)"

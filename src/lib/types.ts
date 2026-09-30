@@ -128,6 +128,8 @@ export interface VendedorConsolidado {
   custo_nao_recorrente?: number;
   /** Desligado no mês (tem data de demissão na folha). */
   desligado?: boolean;
+  /** KA, Varejo ou NPRO — medianas e quadrantes são calculados dentro do segmento. */
+  segmento?: "KA" | "Varejo" | "NPRO";
 
   // Supervisor comercial (identificado pelo primeiro nome na planilha Preser)
   is_supervisor: boolean;
