@@ -348,7 +348,8 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
   // comparado só com quem joga o mesmo jogo.
   const byPeriodo = new Map<string, VendedorConsolidado[]>();
   for (const r of rows) {
-    const g = `${r.periodo}|${r.segmento ?? "Varejo"}`;
+    // supervisores (VBC = soma da equipe) só se comparam entre si
+    const g = `${r.periodo}|${r.is_supervisor ? "SUP" : r.segmento ?? "Varejo"}`;
     if (!byPeriodo.has(g)) byPeriodo.set(g, []);
     byPeriodo.get(g)!.push(r);
   }
