@@ -25,6 +25,7 @@ import {
   BarChart3,
   BookOpen,
   CalendarRange,
+  Crosshair,
 } from "lucide-react";
 
 type NavItem = {
@@ -75,6 +76,7 @@ const sections: NavSection[] = [
       { to: "/preser/detalhada", label: "Análise Detalhada", icon: BarChart3 },
       { to: "/preser/sku", label: "Análise por SKU", icon: Package },
       { to: "/preser/canais", label: "Canais / Drops", icon: Truck },
+      { to: "/preser/cobertura", label: "Cobertura por Categoria", icon: Crosshair },
       { to: "/preser/metas", label: "Metas e Gaps", icon: Target },
       { to: "/preser/regras", label: "Regras PRESER", icon: BookOpen },
     ],
