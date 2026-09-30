@@ -124,6 +124,10 @@ export interface VendedorConsolidado {
   // Diagnóstico do match com a folha
   folha_match_status: "codigo" | "nome_exato" | "nome_fuzzy" | "sem_match" | "sem_folha";
   folha_match_nome?: string;
+  /** Verbas que não são do mês de trabalho (rescisão, 1/3 férias, 13º, retroativos) + encargos — fora do `custo`. */
+  custo_nao_recorrente?: number;
+  /** Desligado no mês (tem data de demissão na folha). */
+  desligado?: boolean;
 
   // Supervisor comercial (identificado pelo primeiro nome na planilha Preser)
   is_supervisor: boolean;

@@ -97,10 +97,12 @@ export default function Ranking() {
     sorted.length === nVendedores
       ? `${fmtNum(nVendedores)} vendedor(es) — clique no cabeçalho de qualquer coluna pra ordenar.`
       : `${fmtNum(nVendedores)} vendedores · ${fmtNum(sorted.length)} linhas (vendedor × mês) — clique no cabeçalho pra ordenar.`;
+  const notaCusto =
+    " Custo = folha recorrente + encargos (sem rescisão, 1/3 de férias, 13º e retroativos). Contas da casa e setores vagos ficam fora.";
 
   return (
     <>
-      <PageHeader title="Ranking de Vendedores" subtitle={subt} actions={<PeriodoFilter />} />
+      <PageHeader title="Ranking de Vendedores" subtitle={subt + notaCusto} actions={<PeriodoFilter />} />
 
       <Card className="mb-4">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -211,7 +213,17 @@ function RankRow({ idx, r }: { idx: number; r: VendedorConsolidado }) {
     <Tr>
       <Td className="text-muted-foreground font-mono text-xs">{idx}</Td>
       <Td>
-        <div className="font-medium">{r.vendedor_nome}</div>
+        <div className="font-medium">
+          {r.vendedor_nome}
+          {r.desligado && (
+            <span
+              title="Desligado no mês: custo = média dos meses completos (sem rescisão)"
+              className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              desligado
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-muted-foreground">{r.periodo}</div>
       </Td>
       <Td className="text-muted-foreground">{r.supervisor || "—"}</Td>

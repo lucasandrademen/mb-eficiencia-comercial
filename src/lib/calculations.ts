@@ -27,6 +27,53 @@ export function custoFolha(f: BaseFolha): number {
   return f.bruto + encargosFolha(f);
 }
 
+/**
+ * Verbas que NÃO são custo do mês de trabalho: 1/3 de férias, férias proporcionais/
+ * vencidas (indenizadas), 13º, aviso prévio indenizado, rescisão, retroativos.
+ * Férias gozadas ("Férias") e aviso trabalhado ficam — substituem o salário do mês.
+ */
+const VERBA_NAO_RECORRENTE =
+  /1\/3|ter[çc]o|f[ée]r\.?\s*proporc|f[ée]rias\s*venc|f[ée]rias\s*\(api\)|13[ºo°]?|d[ée]cimo|av\.?\s*pr[ée]v\.?\s*inden|aviso\s*pr[ée]vio\s*inden|rescis|retro|indeniz/i;
+
+/** Parte não recorrente do bruto (0 quando a folha não traz verbas). */
+export function brutoNaoRecorrente(f: BaseFolha): number {
+  return (f.verbas ?? [])
+    .filter((v) => v.tipo === "vencimento" && VERBA_NAO_RECORRENTE.test(v.descricao))
+    .reduce((t, v) => t + (v.valor ?? 0), 0);
+}
+
+/**
+ * Custo RECORRENTE do colaborador no mês: tira as verbas não recorrentes do bruto
+ * e os encargos na mesma proporção. É o custo usado nas análises da equipe —
+ * senão quem sai de férias ou é desligado vira "caro" naquele mês.
+ */
+export function custoFolhaRecorrente(f: BaseFolha): { recorrente: number; naoRecorrente: number } {
+  const total = custoFolha(f);
+  const nr = Math.min(brutoNaoRecorrente(f), f.bruto);
+  const fracao = f.bruto > 0 ? nr / f.bruto : 0;
+  const naoRecorrente = total * fracao;
+  return { recorrente: total - naoRecorrente, naoRecorrente };
+}
+
+/** Custo recorrente médio de um colaborador nos meses completos (sem admissão/desligamento). */
+function custoMesesCompletos(folha: BaseFolha[], f: BaseFolha): number | null {
+  const outros = folha.filter(
+    (x) =>
+      x.periodo !== f.periodo &&
+      (f.codigo ? x.codigo === f.codigo : x.nome === f.nome) &&
+      !x.demissao &&
+      (x.admissao ?? "").slice(0, 7) !== x.periodo,
+  );
+  if (!outros.length) return null;
+  return outros.reduce((t, x) => t + custoFolhaRecorrente(x).recorrente, 0) / outros.length;
+}
+
+/** Linhas do Acompanhamento que não são uma pessoa: conta da casa ("VENDAS NPRO") e setor vago ("XXXX…"). */
+export function ehContaSemVendedor(id: string, nome: string): boolean {
+  const n = (nome ?? "").trim().toUpperCase();
+  return /^X{4,}$/.test(n.replace(/\s/g, "")) || /^VENDAS\b/.test(n) || id === "555";
+}
+
 // ─── Folha: índice por período+código e por período+nome normalizado ───────
 
 function normalizeNome(s: string): string {
@@ -192,6 +239,8 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
   for (const key of allKeys) {
     const [periodo, vendedor_id] = key.split("|");
     const vend = vendedorByKey.get(key);
+    // conta da casa / setor vago: não é pessoa, não tem custo — fora das análises de equipe
+    if (vend && ehContaSemVendedor(vendedor_id, vend.vendedor_nome)) continue;
     const cart = carteiraByKey.get(key) ?? [];
 
     const vendedor_nome = (vend?.vendedor_nome || vendedor_id)
@@ -208,8 +257,16 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
       vendedor_id,
       vendedor_nome,
     );
-    // Custo real para a empresa = salário bruto + encargos patronais (reais quando há folha).
-    const custo = folhaMatch ? custoFolha(folhaMatch) : (vend?.custo ?? 0);
+    // Custo real para a empresa = salário bruto + encargos patronais (reais quando há folha),
+    // só a parte RECORRENTE (sem rescisão, 1/3 de férias, 13º, retroativos).
+    const partes = folhaMatch ? custoFolhaRecorrente(folhaMatch) : null;
+    // Mês de admissão/desligamento é parcial: usa o custo recorrente médio da
+    // pessoa nos meses completos (senão ela parece barata ou cara demais).
+    const mesParcial =
+      !!folhaMatch &&
+      (!!folhaMatch.demissao || (folhaMatch.admissao ?? "").slice(0, 7) === periodo);
+    const referencia = mesParcial ? custoMesesCompletos(ds.folha ?? [], folhaMatch!) : null;
+    const custo = referencia ?? (partes ? partes.recorrente : (vend?.custo ?? 0));
     const folha_match_status: VendedorConsolidado["folha_match_status"] = !temFolha
       ? "sem_folha"
       : matchType;
@@ -270,6 +327,8 @@ export function buildConsolidated(ds: Dataset, opts: BuildOpts = {}): VendedorCo
 
       folha_match_status,
       folha_match_nome: folhaMatch?.nome,
+      custo_nao_recorrente: partes?.naoRecorrente ?? 0,
+      desligado: !!folhaMatch?.demissao,
 
       is_supervisor: isSupervisorNome(vendedor_nome),
     });
