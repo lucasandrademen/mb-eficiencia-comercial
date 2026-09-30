@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Dataset, EMPTY_DATASET, VendedorConsolidado } from "@/lib/types";
 import { loadDataset, saveDataset } from "@/lib/storage";
@@ -122,7 +123,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   };
 
   // só renderiza depois de ler o banco local (evita tela vazia e sobrescrever dados)
-  if (!pronto) return null;
+  if (!pronto)
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando dados deste computador…
+      </div>
+    );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
